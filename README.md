@@ -38,6 +38,16 @@ This is still a **static website**. No server application, secret API keys, inst
 
 All local paths are relative, so both `username.github.io/` and `username.github.io/repository/` work. `.nojekyll` keeps deployment as plain static files.
 
+The bottom-right label shows the release, a content-based build ID, and whether you are in world or offline mode. Before publishing a new release, run:
+
+```
+node scripts/release.mjs 1.1.1
+```
+
+Use the next version number. This updates both labels and all local asset cache keys; commit and push the resulting files together. `node scripts/release.mjs --check` verifies that the stamp matches the source. Running the script without a version refreshes the content-based build ID for the current release. No build command is needed on GitHub Pages because these stamped files are checked in.
+
+GitHub Pages serves the pushed branch, not uncommitted local edits. Check the repository’s Actions tab for a successful Pages deployment. If the deployment is current but the browser looks old, use Ctrl+Shift+R (Cmd+Shift+R on macOS); the Pages cache can retain responses for about 10 minutes. Versioned module/CSS URLs prevent stale assets being mixed with a fresh page.
+
 For local preview, serve this directory over HTTP, for example `npx --yes serve .`. Opening the world-flight page directly with `file://` is not supported because browsers restrict JavaScript modules and workers. `offline.html` is the original self-contained procedural version and can be opened directly.
 
 ## Data and dependencies

@@ -1,8 +1,8 @@
-import * as maplibre from './vendor/maplibre-gl.mjs';
-import {CONFIG} from './config.mjs';
-import {createNightStyle} from './night-style.mjs';
-import {createPlaceLights} from './place-lights.mjs';
-import {clamp,normalizeLocation,parseCoordinates,destination,locationFromHash,locationHash} from './flight-math.mjs';
+import * as maplibre from './vendor/maplibre-gl.mjs?v=1.1.0-485e53bb';
+import {CONFIG} from './config.mjs?v=1.1.0-485e53bb';
+import {createNightStyle} from './night-style.mjs?v=1.1.0-485e53bb';
+import {createPlaceLights} from './place-lights.mjs?v=1.1.0-485e53bb';
+import {clamp,normalizeLocation,parseCoordinates,destination,locationFromHash,locationHash} from './flight-math.mjs?v=1.1.0-485e53bb';
 
 const $=id=>document.getElementById(id),rad=Math.PI/180,TAU=Math.PI*2;
 const overlay=$('sky'),ctx=overlay.getContext('2d'),dialog=$('places');
@@ -30,7 +30,7 @@ const presets=[
 ];
 function showNotice(message,error=false){
  clearTimeout(transientTimer);$('notice').replaceChildren(document.createTextNode(message));
- if(error){const retry=document.createElement('button');retry.type='button';retry.textContent='Retry';retry.addEventListener('click',()=>window.location.reload());const link=document.createElement('a');link.href='./offline.html';link.textContent='Offline flight';$('notice').append(document.createTextNode(' '),retry,document.createTextNode(' · '),link);}
+ if(error){const retry=document.createElement('button');retry.type='button';retry.textContent='Retry';retry.addEventListener('click',()=>window.location.reload());const link=document.createElement('a');link.href='./offline.html?v=1.1.0-485e53bb';link.textContent='Offline flight';$('notice').append(document.createTextNode(' '),retry,document.createTextNode(' · '),link);}
  $('notice').hidden=false;
 }
 function transient(message){showNotice(message);transientTimer=setTimeout(()=>{if(ready)$('notice').hidden=true;},2600);}
@@ -38,7 +38,7 @@ function wake(){idle=0;$('hud').classList.remove('idle');$('choose-place').class
 function resize(){width=innerWidth;height=innerHeight;pixelRatio=Math.min(devicePixelRatio||1,CONFIG.pixelRatio);overlay.width=Math.round(width*pixelRatio);overlay.height=Math.round(height*pixelRatio);ctx.setTransform(pixelRatio,0,0,pixelRatio,0,0);dirty=true;}
 resize();
 addEventListener('resize',()=>{resize();map?.resize();});
-maplibre.setWorkerUrl(new URL('./vendor/maplibre-gl-worker.mjs',import.meta.url).href);
+maplibre.setWorkerUrl(new URL('./vendor/maplibre-gl-worker.mjs?v=1.1.0-485e53bb',import.meta.url).href);
 maplibre.setWorkerCount(2);
 try{
  map=new maplibre.Map({container:'map',style:createNightStyle(CONFIG.vectorSource,CONFIG.glyphsURL),center:[location.lon,location.lat],zoom:11,pitch:66,bearing:heading-90,minPitch:0,maxPitch:145,minZoom:0,maxZoom:18,attributionControl:false,interactive:true,fadeDuration:0,pixelRatio:Math.min(devicePixelRatio||1,CONFIG.pixelRatio),maxTileCacheSize:160,renderWorldCopies:true,canvasContextAttributes:{antialias:false,powerPreference:'high-performance'}});

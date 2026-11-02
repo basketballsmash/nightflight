@@ -5,3 +5,5 @@
 .notice button{padding:0 3px;border:0;background:transparent;color:var(--accent);font-size:inherit;text-decoration:underline}
 
 button,#sky{-webkit-tap-highlight-color:transparent}@media(max-width:520px){input{font-size:16px}}
+
+.attribution{text-align:right}.build-version{font-size:9px;line-height:12px;color:#a0b1a9;letter-spacing:.025em}
