@@ -1,0 +1,210 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Copyright (c) 2026 Masayuki Hatta -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#030610">
+<meta name="description" content="An endless downward night-flight view with connected town streets, shooting stars, and passing aircraft.">
+<title>Nightflight</title>
+<style>
+:root{color-scheme:dark;--ink:#c8d6df;--dim:#718797;--line:#91b9c426;--accent:#c0e4db;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#030610;color:var(--ink)}
+#terrain{position:fixed;inset:0;width:100%;height:100%;pointer-events:none}
+#scene{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline:none}#scene.dragging{cursor:grabbing}#scene:focus-visible{outline:1px solid #c0e4db55;outline-offset:-3px}
+.hud{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:flex;gap:9px;transition:opacity .8s}.hud.idle{opacity:.08}.hud:hover,.hud:focus-within{opacity:1}.hud button{width:36px;height:36px;border:1px solid #91b9c426;border-radius:50%;background:#080d15a0;color:#b4c5cc;cursor:pointer;font:16px ui-monospace,monospace;touch-action:manipulation}.hud button:hover{border-color:#b4c5cc88}button:focus-visible{outline:2px solid #c0e4db;outline-offset:4px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+</style>
+</head>
+<body>
+<canvas id="scene" tabindex="0" aria-label="Night flight. Drag to look around, or use arrow keys. Press Home to reset the view." aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Home"></canvas>
+<canvas id="terrain" aria-hidden="true"></canvas>
+<div class="hud" id="hud" aria-label="Playback controls">
+<button id="pause" aria-label="Pause" title="Pause (Space)" aria-pressed="false">Ⅱ</button>
+<button id="restart" aria-label="New flight with a new landscape" title="New flight (R)">↻</button>
+<button id="fs" aria-label="Fullscreen" title="Fullscreen (F)">⛶</button>
+</div>
+<div class="sr-only" id="status" role="status">Cruising</div>
+<script>
+(() => {
+ 'use strict';
+ const cv=document.getElementById('scene'),ctx=cv.getContext('2d');
+ const $=id=>document.getElementById(id),TAU=Math.PI*2;
+ let w,h,focal,dpr,horizon;
+ let viewPitch=.42,viewYaw=.21;
+ function resize(){w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,1.5);cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);focal=Math.max(w*.52,h*.65);horizon=h*.5-focal*Math.tan(viewPitch);}
+ addEventListener('resize',resize);resize();
+ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+ function random(n,s=0){let x=Math.imul(n,374761393)^Math.imul(s,668265263);x=Math.imul(x^(x>>>13),1274126177);return ((x^(x>>>16))>>>0)/4294967296;}
+ const sprites=new Map();
+ function light(x,y,r,color,alpha=1){if(alpha<.005||x< -30||x>w+30||y< -30||y>h+30)return;let s=sprites.get(color);if(!s){s=document.createElement('canvas');s.width=s.height=64;const c=s.getContext('2d'),g=c.createRadialGradient(32,32,0,32,32,32);g.addColorStop(0,'#fff');g.addColorStop(.08,color);g.addColorStop(.25,color+'80');g.addColorStop(1,color+'00');c.fillStyle=g;c.fillRect(0,0,64,64);sprites.set(color,s);}const size=Math.max(.4,r)*5;ctx.globalAlpha=clamp(alpha,0,1);ctx.drawImage(s,x-size,y-size,size*2,size*2);}
+ const warm='#ffb775',cool='#a8d6ed',white='#e6edff';
+ const stars=Array.from({length:260},(_,i)=>({az:random(i,1)*TAU,elevation:Math.asin(random(i,2)),r:random(i,3),phase:random(i,4)*TAU}));
+ const speed=235,altitude=9000,airPitch=.025,heading=90;
+ let distance=0,time=0,roll=0,paused=false;
+ const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t);};
+ const mix=(a,b,t)=>a+(b-a)*t;
+ let flightSeed=0,landSeed=0;
+ function randomFlight(){flightSeed=Math.random()*100000|0;landSeed=Math.random()*100000|0;}
+ randomFlight();
+ const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+ // Generate only when crossing an 8 km cell. Animation sends a few uniforms
+ // to the GPU instead of projecting and drawing every lamp in JavaScript.
+ const tiles=new Map(),FAR=260000;
+ function noise(x,z,salt=0){const ix=Math.floor(x),iz=Math.floor(z),u=smooth(x-ix),v=smooth(z-iz),at=(a,b)=>random(Math.imul(a,73856093)^Math.imul(b,19349663),salt+landSeed);return mix(mix(at(ix,iz),at(ix+1,iz),u),mix(at(ix,iz+1),at(ix+1,iz+1),u),v);}
+ function river(z){return -5000+Math.sin(z/21000)*3400+Math.sin(z/7300)*900;}
+ function tile(col,row,size,level){const key=level+':'+col+':'+row;if(tiles.has(key))return tiles.get(key);
+  const values=[],seed=Math.imul(col,73856093)^Math.imul(row,19349663),count=[1800,1900,2000][level],x0=col*size,z0=row*size;
+  function put(x,z,brightness,cold=0,major=0){const color=cold?[.84,.9,1]:[1,.64,.27];values.push(x,z,...color,brightness,major?4.6:2.8+random(Math.floor(x+z),landSeed)*1.2,level);}
+  for(let i=0;i<count;i++){
+   let x=x0+random(seed+i*31,landSeed+11)*size,z=z0+random(seed+i*47,landSeed+12)*size;
+   // Gently warped streets and patchy building lights form a continuous city,
+   // with suburbs tapering into dark terrain rather than circular town islands.
+   const district=noise(x/6500,z/16000,51),urban=smooth((district-.19)/.5);
+   if(random(seed+i*53,landSeed+13)>urban*.9+.04)continue;
+   const street=i%3!==0;
+   if(street){if(i%2)x=Math.round(x/240)*240+Math.sin(z/4900)*320+Math.sin(z/17000)*900;else z=Math.round(z/310)*310+Math.sin(x/6200)*370;}
+   const water=Math.abs(x-river(z))<220+noise(x/6500,z/7000,21)*220,park=noise(x/2300,z/2600,32)<.2;
+   if(water||park)continue;
+   const brightness=(street?.48:.3)+urban*.55,whiteDistrict=noise(x/5200,z/4700,75)>.67;
+   put(x,z,brightness,whiteDistrict&&i%3===0);
+  }
+  // Offset junctions and diagonal links form an irregular road network,
+  // instead of infinite parallel highways dividing the entire landscape.
+  const step=[125,340,1000][level],cell=12000;
+  const junction=(a,b)=>{const seed=Math.imul(a,971)^Math.imul(b,619);return {x:(a+.15+random(seed,landSeed+81)*.7)*cell,z:(b+.15+random(seed,landSeed+82)*.7)*cell,seed};};
+  for(let a=Math.floor(x0/cell)-2;a<=Math.floor((x0+size)/cell)+1;a++)for(let b=Math.floor(z0/cell)-2;b<=Math.floor((z0+size)/cell)+1;b++){
+   const start=junction(a,b);
+   for(const [dx,dz]of [[1,0],[0,1],[1,1]]){const choice=random(start.seed+dx*7+dz*11,landSeed+83);if(choice<(dx&&dz?.82:.18))continue;
+    const end=junction(a+dx,b+dz),vx=end.x-start.x,vz=end.z-start.z,length=Math.hypot(vx,vz),bend=(random(start.seed+dx,landSeed+84)-.5)*1400;
+    for(let n=0;n<=Math.ceil(length/step);n++){const t=n*step/length;if(t>1)break;const curve=Math.sin(t*Math.PI)*bend,x=mix(start.x,end.x,t)-vz/length*curve,z=mix(start.z,end.z,t)+vx/length*curve;
+     if(x<x0||x>=x0+size||z<z0||z>=z0+size)continue;
+     const brightness=.65+noise(x/9000,z/9500,51)*.45;put(x,z,brightness,choice>.77,1);
+    }
+   }
+  }
+  const result=new Float32Array(values);tiles.set(key,result);return result;
+ }
+ const terrain=document.getElementById('terrain'),gl=terrain.getContext('webgl',{alpha:true,antialias:false,premultipliedAlpha:true,powerPreference:'high-performance'});
+ let gpu=null,terrainCell=null,terrainVertices=new Float32Array(0),terrainCount=0,terrainChunks=[];
+ if(gl){
+  const vertex=`attribute vec2 a_world;attribute vec4 a_light;attribute vec2 a_detail;
+  uniform vec2 u_viewport;uniform float u_focal,u_dpr,u_distance,u_pitch,u_yaw,u_roll;
+  varying vec4 v_light;
+  void main(){float along=a_world.y-u_distance,outward=a_world.x+23000.,down=9003.;
+   float p=down*cos(.025)+along*sin(.025);along=along*cos(.025)-down*sin(.025);down=p;
+   p=down*cos(u_roll)+outward*sin(u_roll);outward=outward*cos(u_roll)-down*sin(u_roll);down=p;
+   float right=-along*cos(u_yaw)+outward*sin(u_yaw),away=outward*cos(u_yaw)+along*sin(u_yaw);
+   float depth=away*cos(u_pitch)+down*sin(u_pitch),vertical=down*cos(u_pitch)-away*sin(u_pitch);
+   float range=length(vec2(a_world.x+23000.,a_world.y-u_distance)),level=a_detail.y,blend=1.;
+   if(level<.5)blend=1.-smoothstep(28000.,40000.,range);else if(level<1.5)blend=smoothstep(28000.,40000.,range)*(1.-smoothstep(85000.,110000.,range));else blend=smoothstep(85000.,110000.,range);
+   float fade=blend*exp(-range/155000.)*(1.-smoothstep(185000.,260000.,range));
+   vec2 screen=vec2(right,vertical)*u_focal/max(depth,1.);float r=u_roll*.4;screen=mat2(cos(r),sin(r),-sin(r),cos(r))*screen;
+   gl_Position=vec4(screen.x*2./u_viewport.x,-screen.y*2./u_viewport.y,0.,1.);
+   gl_PointSize=max(2.,a_detail.x*2.2*u_dpr*(1.-.45*clamp(range/120000.,0.,1.)));
+   v_light=vec4(a_light.rgb,a_light.a*fade);if(depth<1.||range>260000.){gl_Position=vec4(3.,3.,0.,1.);v_light.a=0.;}}
+  `;
+  const fragment=`precision mediump float;varying vec4 v_light;void main(){float r=length(gl_PointCoord-.5)*2.;float core=exp(-r*r*15.)*1.25;float halo=exp(-r*r*4.5)*.16;float falloff=(core+halo)*(1.-smoothstep(.72,1.,r));float a=v_light.a*falloff;gl_FragColor=vec4(v_light.rgb*a,a);}`;
+  function shader(type,source){const sh=gl.createShader(type);gl.shaderSource(sh,source);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(sh));return sh;}
+  const program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,vertex));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragment));gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));gl.useProgram(program);
+  const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+  for(const [name,size,offset]of [['a_world',2,0],['a_light',4,8],['a_detail',2,24]]){const location=gl.getAttribLocation(program,name);gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,size,gl.FLOAT,false,32,offset);}
+  const uniforms={};for(const name of ['viewport','focal','dpr','distance','pitch','yaw','roll'])uniforms[name]=gl.getUniformLocation(program,'u_'+name);
+  gl.enable(gl.BLEND);gl.blendFunc(gl.ONE,gl.ONE);gpu={program,buffer,uniforms};
+ }
+ function rebuildTerrain(){const cell=Math.floor(distance/8000);if(terrainCell===cell)return;terrainCell=cell;const used=new Set(),chunks=[];let length=0;
+  for(const [level,size,near,far]of [[0,8000,0,48000],[1,24000,20000,135000],[2,64000,65000,FAR+40000]]){
+   for(let row=Math.floor((distance-far)/size);row<=Math.floor((distance+far)/size);row++)for(let col=Math.floor((-23000-far)/size);col<=Math.floor((-23000+far)/size);col++){
+    const range=Math.hypot((col+.5)*size+23000,(row+.5)*size-distance),margin=size*.72;if(range-margin>far||range+margin<near)continue;
+    const key=level+':'+col+':'+row;used.add(key);const data=tile(col,row,size,level);chunks.push({data,x:(col+.5)*size,z:(row+.5)*size,size});length+=data.length;
+   }
+  }
+  for(const key of tiles.keys())if(!used.has(key))tiles.delete(key);
+  terrainVertices=new Float32Array(length);let offset=0;terrainChunks=[];for(const chunk of chunks){terrainVertices.set(chunk.data,offset);terrainChunks.push({...chunk,first:offset/8,count:chunk.data.length/8});offset+=chunk.data.length;}terrainCount=length/8;
+  if(gpu){gl.bindBuffer(gl.ARRAY_BUFFER,gpu.buffer);gl.bufferData(gl.ARRAY_BUFFER,terrainVertices,gl.STATIC_DRAW);}
+ }
+ function bankAt(t){const segment=Math.floor(t/125),local=t%125,start=12+random(segment,flightSeed+91)*18,duration=38+random(segment,flightSeed+92)*18;
+  if(local<start||local>start+duration)return 0;
+  const u=(local-start)/duration,envelope=smooth(u/.28)*smooth((1-u)/.28),angle=(.10+random(segment,flightSeed+93)*.07)*(random(segment,flightSeed+94)>.5?1:-1);
+  return angle*envelope;
+ }
+ // Look down 24 degrees, slightly forward of the left side.
+ // Forward projects left, so fixed scenery moves right as we pass it.
+ function camera(along,outward,down){
+  const pitched=down*Math.cos(airPitch)+along*Math.sin(airPitch);along=along*Math.cos(airPitch)-down*Math.sin(airPitch);down=pitched;
+  const banked=down*Math.cos(roll)+outward*Math.sin(roll);outward=outward*Math.cos(roll)-down*Math.sin(roll);down=banked;
+  const yaw=viewYaw,pitch=viewPitch;
+  const right=-along*Math.cos(yaw)+outward*Math.sin(yaw);
+  const away=outward*Math.cos(yaw)+along*Math.sin(yaw);
+  const depth=away*Math.cos(pitch)+down*Math.sin(pitch);
+  if(depth<.2)return null;
+  return {x:w/2+right*focal/depth,y:h*.5+(down*Math.cos(pitch)-away*Math.sin(pitch))*focal/depth,sc:focal/depth,depth};
+ }
+ function project(x,z,y=0){const p=camera(z-distance,x+23000,altitude+3-y);return p&&p.depth<FAR?p:null;}
+ function sky(){
+  ctx.globalAlpha=1;const g=ctx.createLinearGradient(0,0,0,h);g.addColorStop(0,'#020306');g.addColorStop(.43,'#08090d');g.addColorStop(.53,'#100e0c');g.addColorStop(1,'#030508');ctx.fillStyle=g;ctx.fillRect(-w,-h,w*3,h*3);
+  for(const s of stars){const ce=Math.cos(s.elevation),p=camera(Math.sin(s.az)*ce*10000,Math.cos(s.az)*ce*10000,-Math.sin(s.elevation)*10000);if(p)light(p.x,p.y,s.r>.97?1.05:.42,white,(.08+s.r*.20)*(.95+.05*Math.sin(time*.7+s.phase)));}
+
+ }
+ function ground(){
+  rebuildTerrain();
+  if(gpu){if(terrain.width!==cv.width||terrain.height!==cv.height){terrain.width=cv.width;terrain.height=cv.height;gl.viewport(0,0,terrain.width,terrain.height);}
+   gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(gpu.program);const u=gpu.uniforms;
+   gl.uniform2f(u.viewport,w,h);gl.uniform1f(u.focal,focal);gl.uniform1f(u.dpr,dpr);gl.uniform1f(u.distance,distance);gl.uniform1f(u.pitch,viewPitch);gl.uniform1f(u.yaw,viewYaw);gl.uniform1f(u.roll,roll);for(const chunk of terrainChunks){const p=camera(chunk.z-distance,chunk.x+23000,altitude+3);if(!p)continue;const extent=chunk.size*p.sc*1.8;if(p.x+extent< -w*.2||p.x-extent>w*1.2||p.y+extent< -h*.2||p.y-extent>h*1.2)continue;gl.drawArrays(gl.POINTS,chunk.first,chunk.count);}
+  }else{
+   // Bounded fallback for browsers without WebGL.
+   const stride=Math.max(1,Math.ceil(terrainCount/9000))*8;ctx.fillStyle='#e5a852';
+   for(let i=0;i<terrainVertices.length;i+=stride){const p=project(terrainVertices[i],terrainVertices[i+1]);if(!p||p.x<0||p.x>w||p.y<0||p.y>h)continue;ctx.globalAlpha=terrainVertices[i+5]*.6;ctx.fillRect(p.x,p.y,1,1);}ctx.globalAlpha=1;
+  }
+ }
+ // Aircraft occupy actual positions above the observer; the same camera
+ // projects navigation lights, stars and terrain when the view is dragged.
+ function aircraftPosition(i,t){const cycle=(t+i*79)%310;return {along:31000-cycle*(160+i*15),outward:11000+i*8500,above:2700+i*1700};}
+ function aircraft(){ctx.globalCompositeOperation='lighter';for(let i=0;i<3;i++){const a=aircraftPosition(i,time),p=camera(a.along,a.outward,-a.above);if(!p)continue;
+   const left=camera(a.along-17,a.outward,-a.above),right=camera(a.along+17,a.outward,-a.above);
+   if(left)light(left.x,left.y,.55,'#ff4949',.75);if(right)light(right.x,right.y,.55,'#83c9ae',.65);
+   light(p.x,p.y,.55,white,.4);if((time+i*.43)%1.4<.09)light(p.x,p.y,1.3,white,.9);
+  }ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;}
+ let meteor=null,nextMeteor=5;
+ function skyPoint(az,elevation){const ce=Math.cos(elevation);return camera(Math.sin(az)*ce*100000,Math.cos(az)*ce*100000,-Math.sin(elevation)*100000);}
+ function shootingStar(dt){nextMeteor-=dt;
+  if(nextMeteor<=0){meteor={az:viewYaw+(Math.random()-.5)*.8,elevation:clamp(-viewPitch+.25+Math.random()*.35,.2,1.2),va:(Math.random()<.5?-1:1)*.35,ve:-.22,t:0};nextMeteor=18+Math.random()*22;}
+  if(!meteor)return;meteor.t+=dt;if(meteor.t>1.05){meteor=null;return;}
+  const m=meteor,t=m.t,head=skyPoint(m.az+m.va*t,m.elevation+m.ve*t),tailTime=Math.max(0,t-.16),tail=skyPoint(m.az+m.va*tailTime,m.elevation+m.ve*tailTime);
+  if(!head||!tail)return;const alpha=Math.sin(t/1.05*Math.PI),g=ctx.createLinearGradient(tail.x,tail.y,head.x,head.y);g.addColorStop(0,'#cddfff00');g.addColorStop(1,'#e5eeff');ctx.globalAlpha=alpha;ctx.strokeStyle=g;ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(tail.x,tail.y);ctx.lineTo(head.x,head.y);ctx.stroke();light(head.x,head.y,.8,white,alpha);ctx.globalAlpha=1;
+ }
+ let idle=0;
+ function wake(){idle=0;$('hud').classList.remove('idle');}
+ function togglePause(){paused=!paused;$('pause').textContent=paused?'▶':'Ⅱ';$('pause').setAttribute('aria-label',paused?'Resume':'Pause');$('pause').setAttribute('aria-pressed',String(paused));$('status').textContent=paused?'Paused':'Cruising';}
+ function restart(){time=0;distance=0;roll=0;paused=false;meteor=null;nextMeteor=5;tiles.clear();terrainCell=null;randomFlight();$('pause').textContent='Ⅱ';$('pause').setAttribute('aria-label','Pause');$('pause').setAttribute('aria-pressed','false');$('status').textContent='Cruising';wake();}
+ function fullscreen(){if(document.fullscreenElement)document.exitFullscreen()?.catch(()=>{});else document.documentElement.requestFullscreen()?.catch(()=>{});}
+ if(!document.documentElement.requestFullscreen)$('fs').hidden=true;
+ $('fs').onclick=fullscreen;$('pause').onclick=togglePause;$('restart').onclick=restart;
+ document.addEventListener('fullscreenchange',()=>{$('fs').setAttribute('aria-label',document.fullscreenElement?'Exit fullscreen':'Fullscreen');});
+ addEventListener('keydown',e=>{if(e.target instanceof HTMLButtonElement&&(e.code==='Space'||e.code==='Enter'))return;if(e.code==='Space')e.preventDefault();if(!e.repeat){if(e.code==='Space')togglePause();if(e.code==='KeyR')restart();if(e.code==='KeyF'&&document.documentElement.requestFullscreen)fullscreen();}wake();});
+ document.addEventListener('visibilitychange',()=>{prev=performance.now();});addEventListener('pointermove',wake);addEventListener('pointerdown',wake);
+ // Pointer capture keeps a drag continuous beyond the canvas boundary.
+ let drag=null;
+ function resetView(){viewPitch=.42;viewYaw=.21;wake();}
+ cv.addEventListener('pointerdown',e=>{if(!e.isPrimary||e.button!==0||drag)return;drag={id:e.pointerId,x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId);cv.classList.add('dragging');cv.focus({preventScroll:true});wake();});
+ cv.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const sensitivity=1.8/Math.min(w,h);viewPitch=clamp(viewPitch-(e.clientY-drag.y)*sensitivity,-1.05,1.25);viewYaw=clamp(viewYaw+(e.clientX-drag.x)*sensitivity,-1.15,1.15);drag.x=e.clientX;drag.y=e.clientY;wake();});
+ function endDrag(e){if(!drag||e.pointerId!==drag.id)return;drag=null;cv.classList.remove('dragging');}
+ for(const event of ['pointerup','pointercancel','lostpointercapture'])cv.addEventListener(event,endDrag);
+ cv.addEventListener('dblclick',resetView);
+ cv.addEventListener('keydown',e=>{const actions={ArrowUp:()=>viewPitch=clamp(viewPitch-.08,-1.05,1.25),ArrowDown:()=>viewPitch=clamp(viewPitch+.08,-1.05,1.25),ArrowLeft:()=>viewYaw=clamp(viewYaw-.08,-1.15,1.15),ArrowRight:()=>viewYaw=clamp(viewYaw+.08,-1.15,1.15),Home:resetView};if(actions[e.code]){e.preventDefault();actions[e.code]();wake();}});
+ let prev=performance.now(),lastRenderKey=null;
+ function frame(now){if(now-prev<1000/60-.3){requestAnimationFrame(frame);return;}const dt=clamp((now-prev)/1000,0,.05);prev=now;horizon=h*.5-focal*Math.tan(viewPitch);idle+=dt;if(idle>4)$('hud').classList.add('idle');
+  if(!paused){time+=dt;distance+=speed*dt;roll=reduced?0:bankAt(time);}
+  const renderKey=[w,h,time,viewPitch,viewYaw,roll,landSeed].join(':');if(paused&&renderKey===lastRenderKey){requestAnimationFrame(frame);return;}lastRenderKey=renderKey;
+  ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';ctx.fillStyle='#02050d';ctx.fillRect(0,0,w,h);
+  ctx.save();
+  const bump=0;
+  ctx.translate(w/2,h/2+bump);ctx.rotate(roll*.4);ctx.translate(-w/2,-h/2);sky();ground();aircraft();shootingStar(paused?0:dt);ctx.restore();ctx.globalAlpha=1;
+  requestAnimationFrame(frame);
+ }
+ requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
