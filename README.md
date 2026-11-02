@@ -13,7 +13,7 @@ Click the place name at the top left (or press **L**). You can:
 
 The aircraft cruises at 9,000 metres and 235 m/s, with gentle occasional banks. Movement follows geographic coordinates and handles the international date line. The map covers latitudes **85° south to 85° north**. Oceans, deserts, and other places without mapped streets will naturally have few lights.
 
-The geography is actual OpenStreetMap roads, buildings, rivers, parks, and coastlines. The night lighting is an artistic style, not live satellite imagery, measured illumination, real-time weather, or live aircraft tracking. Terrain is flat; elevation is not simulated.
+The geography is actual OpenStreetMap roads, buildings, rivers, parks, and coastlines. Roads render as separated light sprites rather than continuous strokes. Building/neighborhood lights use stable mixes of warm amber, soft yellow, white, and occasional cool light, with varied sizes and brightness; generated neighborhood points stay inside mapped urban polygons and out of polygon holes. The night lighting is an artistic style, not live satellite imagery, measured illumination, real-time weather, or live aircraft tracking. Terrain is flat; elevation is not simulated.
 
 ## Controls
 
@@ -26,7 +26,7 @@ The geography is actual OpenStreetMap roads, buildings, rivers, parks, and coast
 | L | Choose a place |
 | F | Fullscreen |
 
-The view stays interactive while paused. Flight pauses while the place picker is open. Reduced-motion preferences disable automatic banking. The controls fade while idle; source attribution remains visible.
+Dragging uses reduced sensitivity and a short, non-overshooting ease. The view stays interactive while paused. Flight pauses while the place picker is open. Reduced-motion preferences disable automatic banking. The controls fade while idle; source attribution remains visible.
 
 ## GitHub Pages
 
@@ -48,14 +48,14 @@ For local preview, serve this directory over HTTP, for example `npx --yes serve 
 
 World flights require an internet connection for map data and search. Coordinate entry and map picking do not depend on the search service. If map loading fails, an error links to the offline flight. Service URLs and flight/performance settings are editable in `config.mjs`.
 
-Rendering uses MapLibre's GPU tile batching, a 30 fps animation cap, 1.25 maximum pixel density, two map workers, and a bounded tile cache. The sky overlay is separate and has no moon, cloud, rain, or fog effects.
+Rendering uses MapLibre's GPU tile batching, a 30 fps animation cap, 1.25 maximum pixel density, two map workers, and a bounded tile cache. Extra light points are capped at 8,500 and rebuilt only when map data changes, at most once every 1.8 seconds. The sky overlay is separate and has no moon, cloud, rain, or fog effects.
 
 ## Validation
 
-Run the coordinate, share-link, and geographic-motion tests with:
+Run the coordinate, share-link, geographic-motion, and light-placement tests with:
 
 ```
-node --test tests/flight-math.test.mjs
+node --test
 ```
 
 Browser checks cover live map loading and search, coordinate entry, map picking, share links, mouse/touch view controls, pause, mobile layout, offline errors, and deployment under a project subdirectory.
