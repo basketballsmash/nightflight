@@ -13,7 +13,7 @@ Click the place name at the top left (or press **L**). You can:
 
 The aircraft cruises at 9,000 metres and 235 m/s, with gentle occasional banks. Movement follows geographic coordinates and handles the international date line. The map covers latitudes **85° south to 85° north**. Oceans, deserts, and other places without mapped streets will naturally have few lights.
 
-The geography is actual OpenStreetMap roads, buildings, rivers, parks, and coastlines. Roads render as separated light sprites rather than continuous strokes. Building/neighborhood lights use stable mixes of warm amber, soft yellow, white, and occasional cool light, with varied sizes and brightness; generated neighborhood points stay inside mapped urban polygons and out of polygon holes. The night lighting is an artistic style, not live satellite imagery, measured illumination, real-time weather, or live aircraft tracking. Terrain is flat; elevation is not simulated.
+The geography is actual OpenStreetMap roads, buildings, rivers, parks, and coastlines. Roads render as separated world-anchored light points rather than continuous strokes. Building/neighborhood lights use stable mixes of warm amber, soft yellow, white, and occasional cool light, with varied sizes and brightness; generated neighborhood points stay inside mapped urban polygons and out of polygon holes. The night lighting is an artistic style, not live satellite imagery, measured illumination, real-time weather, or live aircraft tracking. Terrain is flat; elevation is not simulated.
 
 ## Controls
 
@@ -26,7 +26,7 @@ The geography is actual OpenStreetMap roads, buildings, rivers, parks, and coast
 | L | Choose a place |
 | F | Fullscreen |
 
-Dragging uses reduced sensitivity and a short, non-overshooting ease. The view stays interactive while paused. Flight pauses while the place picker is open. Reduced-motion preferences disable automatic banking. The controls fade while idle; source attribution remains visible.
+Dragging uses reduced sensitivity and a short, non-overshooting ease, with safe upward/downward limits. Camera transforms are computed from the aircraft position without inheriting elevation from previous views. The view stays interactive while paused. Flight pauses while the place picker is open. Reduced-motion preferences disable automatic banking. The controls fade while idle; source attribution remains visible.
 
 ## GitHub Pages
 
@@ -58,11 +58,11 @@ For local preview, serve this directory over HTTP, for example `npx --yes serve 
 
 World flights require an internet connection for map data and search. Coordinate entry and map picking do not depend on the search service. If map loading fails, an error links to the offline flight. Service URLs and flight/performance settings are editable in `config.mjs`.
 
-Rendering uses MapLibre's GPU tile batching, a 30 fps animation cap, 1.25 maximum pixel density, two map workers, and a bounded tile cache. Extra light points are capped at 8,500 and rebuilt only when map data changes, at most once every 1.8 seconds. The sky overlay is separate and has no moon, cloud, rain, or fog effects.
+Rendering uses MapLibre's GPU tile batching, a 30 fps animation cap, 1.25 maximum pixel density, two map workers plus a dedicated lighting worker, and a bounded tile cache. Road/building light points are capped at 12,000. Raw tile geometry is collected in short, yielding batches, transferred to the lighting worker, and refreshed at most every three seconds during normal flight, with a faster refresh after a view change settles. Stable world-coordinate keys and cached points prevent reshuffling; coarser duplicate roads are removed when detailed tiles arrive. Light radii stay consistent while tilting. The per-tile adapter targets the pinned MapLibre 6.16.0 renderer, with a public-API fallback for future upgrades. The sky overlay is separate and has no moon, cloud, rain, or fog effects. Meteor heads/tails stay above the horizon and the entire overlay is clipped to the visible sky, including during banking.
 
 ## Validation
 
-Run the coordinate, share-link, geographic-motion, and light-placement tests with:
+Run the coordinate, share-link, geographic-motion, light-placement, camera-stability, and meteor/horizon tests with:
 
 ```
 node --test

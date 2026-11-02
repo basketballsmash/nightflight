@@ -10,7 +10,7 @@ const check=process.argv.includes('--check');
 const requested=process.argv.slice(2).find(arg=>arg!=='--check');
 const version=requested||metadata.version;
 if(!/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(version))throw new Error('Use a version such as 1.1.1');
-const files=['index.html','offline.html','nightflight.css','nightflight.mjs','night-style.mjs','flight-math.mjs','place-lights.mjs','config.mjs'];
+const files=['index.html','offline.html','nightflight.css','nightflight.mjs','night-style.mjs','flight-math.mjs','place-lights.mjs','view-math.mjs','lights-worker.mjs','config.mjs'];
 const asset=/(\.\/[^"'\s<>]+\.(?:mjs|js|css|html))(?:\?v=[^"'\s<>]*)?/g;
 const label=/(<div\s+id="build-version"[^>]*>)[^<]*(<\/div>)/;
 function canonical(text){return text.replace(asset,'$1').replace(label,'$1__BUILD__$2');}

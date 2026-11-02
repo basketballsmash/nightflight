@@ -1,8 +1,8 @@
-import * as maplibre from './vendor/maplibre-gl.mjs?v=1.1.0-485e53bb';
-import {CONFIG} from './config.mjs?v=1.1.0-485e53bb';
-import {createNightStyle} from './night-style.mjs?v=1.1.0-485e53bb';
-import {createPlaceLights} from './place-lights.mjs?v=1.1.0-485e53bb';
-import {clamp,normalizeLocation,parseCoordinates,destination,locationFromHash,locationHash} from './flight-math.mjs?v=1.1.0-485e53bb';
+import * as maplibre from './vendor/maplibre-gl.mjs?v=1.1.1-88241b9d';
+import {CONFIG} from './config.mjs?v=1.1.1-88241b9d';
+import {createNightStyle} from './night-style.mjs?v=1.1.1-88241b9d';
+import {flightCamera,VIEW_LIMITS,wrapAngle,meteorPath,skyClipPolygon} from './view-math.mjs?v=1.1.1-88241b9d';
+import {clamp,normalizeLocation,parseCoordinates,destination,locationFromHash,locationHash} from './flight-math.mjs?v=1.1.1-88241b9d';
 
 const $=id=>document.getElementById(id),rad=Math.PI/180,TAU=Math.PI*2;
 const overlay=$('sky'),ctx=overlay.getContext('2d'),dialog=$('places');
@@ -13,6 +13,7 @@ location ||= normalizeLocation(CONFIG.defaultLocation);
 let position={lat:location.lat,lon:location.lon},heading=location.heading;
 let time=0,paused=false,ready=false,picking=false,lookTilt=24,lookYaw=0,bank=0,dirty=true;
 let targetTilt=24,targetYaw=0,lightingDirty=true,lastLights=-Infinity;
+let lightsWorker=null,lightsBusy=false,lightsEpoch=0,lightsRequest=0,lightSignature='',lastDrag=0,lightingViewDirty=true;
 let width=innerWidth,height=innerHeight,pixelRatio=1,previous=performance.now(),lastFrame=0,idle=0;
 let drag=null,pickMarker=null,candidate=null,searchController=null,searchBusy=false,lastSearch=-Infinity;
 let map,noticeTimer,transientTimer,mapFailed=false;
@@ -30,7 +31,7 @@ const presets=[
 ];
 function showNotice(message,error=false){
  clearTimeout(transientTimer);$('notice').replaceChildren(document.createTextNode(message));
- if(error){const retry=document.createElement('button');retry.type='button';retry.textContent='Retry';retry.addEventListener('click',()=>window.location.reload());const link=document.createElement('a');link.href='./offline.html?v=1.1.0-485e53bb';link.textContent='Offline flight';$('notice').append(document.createTextNode(' '),retry,document.createTextNode(' · '),link);}
+ if(error){const retry=document.createElement('button');retry.type='button';retry.textContent='Retry';retry.addEventListener('click',()=>window.location.reload());const link=document.createElement('a');link.href='./offline.html?v=1.1.1-88241b9d';link.textContent='Offline flight';$('notice').append(document.createTextNode(' '),retry,document.createTextNode(' · '),link);}
  $('notice').hidden=false;
 }
 function transient(message){showNotice(message);transientTimer=setTimeout(()=>{if(ready)$('notice').hidden=true;},2600);}
@@ -38,15 +39,15 @@ function wake(){idle=0;$('hud').classList.remove('idle');$('choose-place').class
 function resize(){width=innerWidth;height=innerHeight;pixelRatio=Math.min(devicePixelRatio||1,CONFIG.pixelRatio);overlay.width=Math.round(width*pixelRatio);overlay.height=Math.round(height*pixelRatio);ctx.setTransform(pixelRatio,0,0,pixelRatio,0,0);dirty=true;}
 resize();
 addEventListener('resize',()=>{resize();map?.resize();});
-maplibre.setWorkerUrl(new URL('./vendor/maplibre-gl-worker.mjs?v=1.1.0-485e53bb',import.meta.url).href);
+maplibre.setWorkerUrl(new URL('./vendor/maplibre-gl-worker.mjs?v=1.1.1-88241b9d',import.meta.url).href);
 maplibre.setWorkerCount(2);
 try{
- map=new maplibre.Map({container:'map',style:createNightStyle(CONFIG.vectorSource,CONFIG.glyphsURL),center:[location.lon,location.lat],zoom:11,pitch:66,bearing:heading-90,minPitch:0,maxPitch:145,minZoom:0,maxZoom:18,attributionControl:false,interactive:true,fadeDuration:0,pixelRatio:Math.min(devicePixelRatio||1,CONFIG.pixelRatio),maxTileCacheSize:160,renderWorldCopies:true,canvasContextAttributes:{antialias:false,powerPreference:'high-performance'}});
+ map=new maplibre.Map({container:'map',style:createNightStyle(CONFIG.vectorSource,CONFIG.glyphsURL),center:[location.lon,location.lat],zoom:11,pitch:66,bearing:heading-90,minPitch:0,maxPitch:122,minZoom:0,maxZoom:18,attributionControl:false,interactive:true,fadeDuration:0,pixelRatio:Math.min(devicePixelRatio||1,CONFIG.pixelRatio),maxTileCacheSize:100,renderWorldCopies:true,canvasContextAttributes:{antialias:false,powerPreference:'high-performance'}});
  map.setMissingStyleImageResolver(id=>{const colors={'night-warm':[246,180,93],'night-amber':[255,201,125],'night-white':[232,234,216]},color=colors[id];if(!color||map.hasImage(id))return;const size=16,data=new Uint8Array(size*size*4);for(let y=0;y<size;y++)for(let x=0;x<size;x++){const d=Math.hypot(x-7.5,y-7.5)/2,alpha=Math.min(1,Math.exp(-d*d/1.05)+Math.exp(-d*d/4.5)*.12),i=(y*size+x)*4;data[i]=color[0];data[i+1]=color[1];data[i+2]=color[2];data[i+3]=Math.round(alpha*255);}map.addImage(id,{width:size,height:size,data},{pixelRatio:2});});
- map.setVerticalFieldOfView(60);
+ map.setVerticalFieldOfView(60);map.setCenterClampedToGround(false);
  for(const name of ['dragPan','dragRotate','scrollZoom','boxZoom','keyboard','doubleClickZoom','touchZoomRotate','touchPitch'])map[name]?.disable();
  applyCamera();
- map.on('sourcedata',event=>{if(event.sourceId==='world'&&event.sourceDataType==='content')lightingDirty=true;});
+ map.on('sourcedata',event=>{if(event.sourceId==='world'&&event.sourceDataType==='content'){lightingDirty=true;if(performance.now()-lastDrag<2500)lightingViewDirty=true;}});
  map.on('load',()=>{ready=true;$('map').dataset.state=mapFailed?'error':'ready';clearTimeout(noticeTimer);if(!mapFailed)$('notice').hidden=true;dirty=true;});
  map.on('error',()=>{if(!ready){mapFailed=true;$('map').dataset.state='error';showNotice('Map data could not load. Check your connection and retry.',true);}});
  map.on('click',event=>{if(!picking)return;const point=normalizeLocation({lat:event.lngLat.lat,lon:((event.lngLat.lng+180)%360+360)%360-180,name:''});if(!point)return;candidate=point;if(!pickMarker){const el=document.createElement('div');el.className='pick-marker';pickMarker=new maplibre.Marker({element:el}).setLngLat([point.lon,point.lat]).addTo(map);}else pickMarker.setLngLat([point.lon,point.lat]);$('pick-instruction').textContent=`${point.lat.toFixed(4)}, ${point.lon.toFixed(4)}`;$('confirm-pick').disabled=false;});
@@ -54,14 +55,13 @@ try{
 }catch(error){$('map').dataset.state='error';showNotice('This browser could not start the world map.',true);console.error(error);}
 
 function applyCamera(){if(!map||picking)return;
- const bearing=heading-90+lookYaw,pitch=clamp(90-lookTilt,5,140);
- const options=map.calculateCameraOptionsFromCameraLngLatAltRotation([position.lon,position.lat],CONFIG.altitude,bearing,pitch,bank*.5);
- if([options.zoom,options.center.lng,options.center.lat,options.elevation].every(Number.isFinite))map.jumpTo(options);
+ const options=flightCamera({position,heading,yaw:lookYaw,tilt:lookTilt,altitude:CONFIG.altitude,height,roll:bank*.5});
+ if([options.zoom,...options.center,options.elevation].every(Number.isFinite))map.jumpTo(options);
 }
 function updateLabel(){ $('place-name').textContent=location.name;document.title=`${location.name} · Nightflight`;$('heading').value=String(Math.round(location.heading/45)*45%360);}
 function saveLocation(){try{localStorage.setItem('nightflight-location',JSON.stringify(location));}catch{}try{history.replaceState(null,'',locationHash(location));}catch{}}
 function startFlight(value,preserveHeading=false){const valid=normalizeLocation({...value,heading:preserveHeading?value.heading:Number($('heading').value)});if(!valid){$('search-status').textContent='Use a latitude between −85 and 85, and longitude between −180 and 180.';return;}
- location=valid;position={lat:valid.lat,lon:valid.lon};heading=valid.heading;time=0;bank=0;lookTilt=targetTilt=24;lookYaw=targetYaw=0;lightingDirty=true;lastLights=-Infinity;map?.getSource('place-lights')?.setData({type:'FeatureCollection',features:[]});meteor=null;nextMeteor=5;paused=false;dirty=true;
+ location=valid;position={lat:valid.lat,lon:valid.lon};heading=valid.heading;time=0;bank=0;lookTilt=targetTilt=24;lookYaw=targetYaw=0;lightingDirty=true;lightingViewDirty=true;lastDrag=performance.now();lastLights=-Infinity;lightsEpoch++;lightSignature='';map?.getSource('place-lights')?.setData({type:'FeatureCollection',features:[]});meteor=null;nextMeteor=5;paused=false;dirty=true;
  if(picking)finishPicking();if(dialog.open)dialog.close();$('pause').textContent='Ⅱ';$('pause').setAttribute('aria-label','Pause');$('pause').setAttribute('aria-pressed','false');$('flight-status').textContent=`Flying over ${valid.name}`;updateLabel();saveLocation();applyCamera();wake();
 }
 function openPlaces(){if(picking)return;wake();$('search-status').textContent='';$('results').replaceChildren();$('presets').hidden=false;updateLabel();dialog.showModal();setTimeout(()=>$('query').focus(),0);}
@@ -99,7 +99,7 @@ function renderResults(features){$('results').replaceChildren();let count=0;cons
 $('search-form').addEventListener('submit',searchPlaces);
 $('copy-link').onclick=async()=>{const share={...location,lat:position.lat,lon:position.lon,heading};const url=new URL(window.location.href);url.hash=locationHash(share).slice(1);try{await navigator.clipboard.writeText(url.href);$('search-status').textContent='Flight link copied.';}catch{$('search-status').textContent='Copy this flight link:';const input=document.createElement('input');input.value=url.href;input.readOnly=true;$('results').replaceChildren(input);input.focus();input.select();}};
 
-function overviewStyle(enabled){for(const id of ['overview-land','overview-borders','overview-labels'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',enabled?'visible':'none');for(const id of ['building-lamps','building-halos'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',enabled?'none':'visible');if(map.getLayer('water'))map.setPaintProperty('water','fill-color',enabled?'#0b1928':'#010308');}
+function overviewStyle(enabled){for(const id of ['overview-land','overview-borders','overview-labels'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',enabled?'visible':'none');for(const id of ['building-lamps','building-halos','arterial-lamps','road-halos'])if(map.getLayer(id))map.setLayoutProperty(id,'visibility',enabled?'none':'visible');if(map.getLayer('water'))map.setPaintProperty('water','fill-color',enabled?'#0b1928':'#010308');}
 function finishPicking(){picking=false;overviewStyle(false);map.dragPan.disable();map.scrollZoom.disable();map.touchZoomRotate.disable();map.doubleClickZoom.disable();overlay.style.pointerEvents='';$('pick-controls').hidden=true;$('hud').hidden=false;$('choose-place').hidden=false;pickMarker?.remove();pickMarker=null;candidate=null;dirty=true;}
 $('pick-map').onclick=()=>{if(!map)return;dialog.close();picking=true;overviewStyle(true);candidate=null;$('confirm-pick').disabled=true;$('pick-instruction').textContent='Pan and zoom, then click your starting point.';$('pick-controls').hidden=false;$('hud').hidden=true;$('choose-place').hidden=true;overlay.style.pointerEvents='none';ctx.clearRect(0,0,width,height);map.jumpTo({center:[position.lon,position.lat],zoom:3,pitch:0,roll:0,bearing:0,elevation:0});map.dragPan.enable();map.scrollZoom.enable();map.touchZoomRotate.enable();map.touchZoomRotate.disableRotation();map.doubleClickZoom.enable();};
 $('cancel-pick').onclick=()=>{finishPicking();applyCamera();openPlaces();};
@@ -110,7 +110,7 @@ if(!fullscreenRoot.requestFullscreen)$('fullscreen').hidden=true;
 async function fullscreen(){try{if(document.fullscreenElement)await document.exitFullscreen();else await fullscreenRoot.requestFullscreen();}catch{transient('Fullscreen is unavailable in this browser.');}}
 $('fullscreen').onclick=fullscreen;
 document.addEventListener('fullscreenchange',()=>{$('fullscreen').setAttribute('aria-label',document.fullscreenElement?'Exit fullscreen':'Fullscreen');});
-function moveLook(dx,dy){targetTilt=clamp(targetTilt-dy*.05,-48,82);targetYaw=((targetYaw-dx*.055+180)%360+360)%360-180;dirty=true;wake();}
+function moveLook(dx,dy){dx=clamp(Number.isFinite(dx)?dx:0,-160,160);dy=clamp(Number.isFinite(dy)?dy:0,-160,160);targetTilt=clamp(targetTilt-dy*.05,VIEW_LIMITS.minTilt,VIEW_LIMITS.maxTilt);targetYaw=wrapAngle(targetYaw-dx*.055);lastDrag=performance.now();lightingDirty=true;lightingViewDirty=true;dirty=true;wake();}
 function easeLook(dt){const deltaTilt=targetTilt-lookTilt,deltaYaw=((targetYaw-lookYaw+540)%360)-180;if(Math.abs(deltaTilt)<.003&&Math.abs(deltaYaw)<.003){if(lookTilt!==targetTilt||lookYaw!==targetYaw){lookTilt=targetTilt;lookYaw=targetYaw;dirty=true;}return;}const gain=reduced?1:1-Math.exp(-dt*7);lookTilt+=deltaTilt*gain;lookYaw=((lookYaw+deltaYaw*gain+180)%360+360)%360-180;dirty=true;}
 overlay.addEventListener('pointerdown',event=>{if(!event.isPrimary||event.button!==0||drag||picking)return;drag={id:event.pointerId,x:event.clientX,y:event.clientY};overlay.setPointerCapture(event.pointerId);overlay.classList.add('dragging');overlay.focus({preventScroll:true});wake();});
 overlay.addEventListener('pointermove',event=>{if(!drag||event.pointerId!==drag.id)return;moveLook(event.clientX-drag.x,event.clientY-drag.y);drag.x=event.clientX;drag.y=event.clientY;});
@@ -127,24 +127,48 @@ addEventListener('hashchange',()=>{const value=locationFromHash(window.location.
 
 // Directional sky objects use the same FOV, bearing, pitch and roll as the map.
 const stars=Array.from({length:550},(_,i)=>({az:random(i,1)*TAU,elevation:Math.asin(random(i,2)),brightness:random(i,3)}));
-function projectSky(az,elevation){const bearing=(heading-90+lookYaw)*rad,tilt=lookTilt*rad,ce=Math.cos(elevation),east=Math.sin(az)*ce,north=Math.cos(az)*ce,up=Math.sin(elevation),right=east*Math.cos(bearing)-north*Math.sin(bearing),forward=east*Math.sin(bearing)+north*Math.cos(bearing),depth=forward*Math.cos(tilt)-up*Math.sin(tilt);
+function projectSky(az,elevation){if(elevation<=.035)return null;const bearing=(heading-90+lookYaw)*rad,tilt=lookTilt*rad,ce=Math.cos(elevation),east=Math.sin(az)*ce,north=Math.cos(az)*ce,up=Math.sin(elevation),right=east*Math.cos(bearing)-north*Math.sin(bearing),forward=east*Math.sin(bearing)+north*Math.cos(bearing),depth=forward*Math.cos(tilt)-up*Math.sin(tilt);
  if(depth<=.01)return null;const focal=height/(2*Math.tan(30*rad)),x=right*focal/depth,y=(-up*Math.cos(tilt)-forward*Math.sin(tilt))*focal/depth,r=-bank*.5*rad;return {x:width/2+x*Math.cos(r)-y*Math.sin(r),y:height/2+x*Math.sin(r)+y*Math.cos(r)};
 }
 function glow(x,y,r,color,alpha){if(x< -10||x>width+10||y< -10||y>height+10)return;ctx.globalAlpha=alpha;ctx.fillStyle=color;ctx.shadowBlur=r*4;ctx.shadowColor=color;ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fill();ctx.shadowBlur=0;}
 let meteor=null,nextMeteor=5;
-function drawSky(dt){ctx.clearRect(0,0,width,height);
+function drawSky(dt){ctx.clearRect(0,0,width,height);ctx.save();ctx.beginPath();const polygon=skyClipPolygon(width,height,lookTilt,bank*.5);polygon.forEach(([x,y],i)=>i?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.clip();
  for(const star of stars){const point=projectSky(star.az,star.elevation);if(!point||point.x<0||point.x>width||point.y<0||point.y>height)continue;ctx.globalAlpha=.15+star.brightness*.4;ctx.fillStyle='#d1dce7';ctx.fillRect(point.x,point.y,star.brightness>.96?1.3:.7,star.brightness>.96?1.3:.7);}
  for(let i=0;i<3;i++){const along=22000-((time+i*71)%250)*170,out=14000+i*8000,bearing=(heading-90)*rad,east=Math.sin(bearing)*out+Math.cos(bearing)*along,north=Math.cos(bearing)*out-Math.sin(bearing)*along,point=projectSky(Math.atan2(east,north),Math.atan2(2400+i*1800,Math.hypot(east,north)));if(!point)continue;glow(point.x,point.y,.7,'#e4e3d7',.6);glow(point.x-1.2,point.y,.5,'#ef6354',.65);if((time+i*.43)%1.4<.09)glow(point.x,point.y,1.4,'#eff6ff',.9);}
  nextMeteor-=dt;if(nextMeteor<=0){meteor={az:(heading-90+lookYaw)*rad+(Math.random()-.5)*.6,elevation:clamp(-lookTilt*rad+.2+Math.random()*.3,.15,1.3),va:(Math.random()<.5?-1:1)*.35,t:0};nextMeteor=18+Math.random()*23;}
- if(meteor){meteor.t+=dt;if(meteor.t>1.05)meteor=null;else{const m=meteor,t=m.t,tail=Math.max(0,t-.14),a=projectSky(m.az+m.va*t,m.elevation-t*.22),b=projectSky(m.az+m.va*tail,m.elevation-tail*.22);if(a&&b){const gradient=ctx.createLinearGradient(b.x,b.y,a.x,a.y);gradient.addColorStop(0,'#cddfff00');gradient.addColorStop(1,'#e3efff');ctx.globalAlpha=Math.sin(t/1.05*Math.PI);ctx.strokeStyle=gradient;ctx.lineWidth=1.1;ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(a.x,a.y);ctx.stroke();}}}
- ctx.globalAlpha=1;
+ if(meteor){meteor.t+=dt;if(meteor.t>1.05)meteor=null;else{const m=meteor,t=m.t,tail=Math.max(0,t-.14),headPoint=meteorPath(m,t),tailPoint=meteorPath(m,tail),a=projectSky(headPoint.az,headPoint.elevation),b=projectSky(tailPoint.az,tailPoint.elevation);if(a&&b){const gradient=ctx.createLinearGradient(b.x,b.y,a.x,a.y);gradient.addColorStop(0,'#cddfff00');gradient.addColorStop(1,'#e3efff');ctx.globalAlpha=Math.sin(t/1.05*Math.PI);ctx.strokeStyle=gradient;ctx.lineWidth=1.1;ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(a.x,a.y);ctx.stroke();}}}
+ ctx.restore();ctx.globalAlpha=1;
 }
 function bankAt(t){if(reduced)return 0;const segment=Math.floor(t/125),local=t%125,start=18+random(segment,flightSeed)*14,duration=38+random(segment,flightSeed+1)*14;if(local<start||local>start+duration)return 0;const u=(local-start)/duration;return (random(segment,flightSeed+2)>.5?1:-1)*(4+random(segment,flightSeed+3)*3)*smooth(u/.3)*smooth((1-u)/.3);}
-function refreshPlaceLights(now){if(!ready||picking||!lightingDirty||now-lastLights<1800)return;lightingDirty=false;lastLights=now;
- const source=map.getSource('place-lights');if(!source)return;
- const buildings=map.querySourceFeatures('world',{sourceLayer:'building'}).slice(0,9000).map(feature=>({geometry:feature.geometry,properties:{...feature.properties,lightBuilding:true}}));
- const neighborhoods=map.querySourceFeatures('world',{sourceLayer:'landuse',filter:['in',['get','class'],['literal',['residential','commercial','retail','industrial']]]}).slice(0,3000);
- const center=map.getCenter();source.setData(createPlaceLights([...buildings,...neighborhoods],{center:[center.lng,center.lat],maxPoints:8500}));
+try{
+ lightsWorker=new Worker(new URL('./lights-worker.mjs?v=1.1.1-88241b9d',import.meta.url),{type:'module'});
+ lightsWorker.onmessage=event=>{lightsBusy=false;const result=event.data;if(result.epoch!==lightsEpoch||result.error||!result.data)return;const signature=result.data.features.map(feature=>feature.id).join('|');if(signature===lightSignature)return;lightSignature=signature;map?.getSource('place-lights')?.setData(result.data);};
+ lightsWorker.onerror=()=>{lightsBusy=false;};
+}catch{lightsWorker=null;}
+async function refreshPlaceLights(now){
+ if(!ready||picking||dialog.open||document.hidden||drag||now-lastDrag<450||!lightingDirty||lightsBusy||!lightsWorker||now-lastLights<(lightingViewDirty?900:3000))return;
+ lightingDirty=false;lightingViewDirty=false;lastLights=now;lightsBusy=true;const epoch=lightsEpoch,areas=[],roads=[],tiles=[],transfers=[];
+ const plain=(feature,building=false)=>{const properties={class:feature.properties?.class,brunnel:feature.properties?.brunnel,lightBuilding:building},vector=feature._vectorTileFeature,tile=feature.tile||{x:feature._x,y:feature._y,z:feature._z};if(!vector)return {geometry:feature.geometry,tile,properties};const rings=vector.loadGeometry(),ringLengths=rings.map(r=>r.length),coordinates=new Float32Array(ringLengths.reduce((sum,n)=>sum+n,0)*2);let i=0;for(const ring of rings)for(const p of ring){coordinates[i++]=p.x;coordinates[i++]=p.y;}transfers.push(coordinates.buffer);return {tile,properties,type:vector.type,extent:vector.extent,ringLengths,coordinates};};
+ const yieldUI=()=>new Promise(resolve=>setTimeout(resolve,0));
+ try{
+  // MapLibre is pinned in vendor/. Its per-tile adapter lets us yield between
+  // tiles instead of running one large, synchronous querySourceFeatures scan.
+  const style=map.style,manager=style?.tileManagers?.world,ids=manager?.getRenderableIds?.(),seen=new Set();let deadline=performance.now()+3;
+  if(ids){const roadQuota=Math.max(24,Math.ceil(6000/Math.max(1,ids.length))),areaQuota=Math.max(6,Math.ceil(1400/Math.max(1,ids.length)));
+   for(const id of ids){const tile=manager.getTileByID(id),canonical=tile?.tileID?.canonical;if(!tile||!canonical)continue;const key=canonical.z+':'+canonical.x+':'+canonical.y;if(seen.has(key))continue;seen.add(key);tiles.push({x:canonical.x,y:canonical.y,z:canonical.z});
+    for(const [layer,allowed,output,quota]of [['landuse',['residential','commercial','retail','industrial'],areas,areaQuota],['transportation',['motorway','trunk','primary','secondary','tertiary','minor','service'],roads,roadQuota]]){
+     const features=[];tile.querySourceFeatures(features,{sourceLayer:layer,filter:['in','class',...allowed],globalState:style._globalState,worldCoordinateHelper:style.projection.worldCoordinateHelper});const stride=Math.max(1,Math.ceil(features.length/quota));
+     for(let i=0;i<features.length;i+=stride){output.push(plain(features[i]));if(performance.now()>deadline){await yieldUI();deadline=performance.now()+3;if(epoch!==lightsEpoch||drag){lightsBusy=false;lightingDirty=true;return;}}}
+     if(performance.now()>deadline){await yieldUI();deadline=performance.now()+3;}
+    }
+   }
+  }else{
+   // Compatibility fallback if the vendored renderer is replaced in the future.
+   for(const [layer,output]of [['landuse',areas],['transportation',roads]]){const features=map.querySourceFeatures('world',{sourceLayer:layer});const stride=Math.max(1,Math.ceil(features.length/1500));for(let i=0;i<features.length;i+=stride){output.push(plain(features[i]));if(performance.now()>deadline){await yieldUI();deadline=performance.now()+3;}}}
+  }
+  if(epoch!==lightsEpoch){lightsBusy=false;return;}
+  const center=map.getCenter();lightsWorker.postMessage({id:++lightsRequest,epoch,areas,roads,tiles,center:[position.lon,position.lat],focus:[center.lng,center.lat],view:{position:{...position},width,height,tilt:lookTilt,bearing:heading-90+lookYaw,roll:bank*.5},maxPoints:12000},transfers);
+ }catch{lightsBusy=false;lightingDirty=true;}
 }
 function tick(now){requestAnimationFrame(tick);if(now-lastFrame<1000/CONFIG.frameRate-1)return;lastFrame=now;const dt=clamp((now-previous)/1000,0,.08);previous=now;idle+=dt;
  if(idle>4&&!dialog.open&&!picking){$('hud').classList.add('idle');$('choose-place').classList.add('idle');}
