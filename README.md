@@ -60,6 +60,12 @@ World flights require an internet connection for map data and search. Coordinate
 
 Rendering uses MapLibre's GPU tile batching, a 30 fps animation cap, 1.25 maximum pixel density, two map workers plus a dedicated lighting worker, and a bounded tile cache. Road/building light points are capped at 12,000. Raw tile geometry is collected in short, yielding batches, transferred to the lighting worker, and refreshed at most every three seconds during normal flight, with a faster refresh after a view change settles. Stable world-coordinate keys and cached points prevent reshuffling; coarser duplicate roads are removed when detailed tiles arrive. Light radii stay consistent while tilting. The per-tile adapter targets the pinned MapLibre 6.16.0 renderer, with a public-API fallback for future upgrades. The sky overlay is separate and has no moon, cloud, rain, or fog effects. Meteor heads/tails stay above the horizon and the entire overlay is clipped to the visible sky, including during banking.
 
+## Code structure
+
+`nightflight.mjs` coordinates the app and animation loop. `flight-state.mjs` owns movement and banking, `view-controls.mjs` handles dragging, and `sky-renderer.mjs` draws the sky overlay. `place-picker.mjs` owns the place UI; `place-search.mjs` handles search, caching, and throttling.
+
+`lighting-controller.mjs` schedules updates, `map-lighting-source.mjs` isolates the pinned MapLibre tile adapter, and `lights-worker.mjs` owns the per-flight light cache. Pure geometry calculations live in `light-geometry.mjs`, `place-lights.mjs`, `flight-math.mjs`, and `view-math.mjs`. Modules are served directly; no bundler is required.
+
 ## Validation
 
 Run the coordinate, share-link, geographic-motion, light-placement, camera-stability, and meteor/horizon tests with:
