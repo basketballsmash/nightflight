@@ -1,10 +1,10 @@
-import { createPlaceLights } from "./place-lights.mjs?v=1.1.2-65eb2218";
+import { createPlaceLights } from "./place-lights.mjs?v=1.1.3-481c94c1";
 import {
   roadLights,
   visibilityFor,
   expandFeature,
   lightHash as hash,
-} from "./light-geometry.mjs?v=1.1.2-65eb2218";
+} from "./light-geometry.mjs?v=1.1.3-481c94c1";
 const rad = Math.PI / 180;
 
 // Each flight owns a cache; the worker entry point only transports requests/results.

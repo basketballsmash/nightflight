@@ -2,12 +2,12 @@ import {
   normalizeLocation,
   parseCoordinates,
   locationHash,
-} from "./flight-math.mjs?v=1.1.2-65eb2218";
+} from "./flight-math.mjs?v=1.1.3-481c94c1";
 import {
   PlaceSearch,
   SearchThrottleError,
   searchResults,
-} from "./place-search.mjs?v=1.1.2-65eb2218";
+} from "./place-search.mjs?v=1.1.3-481c94c1";
 
 const PRESETS = [
   { name: "Tokyo", lat: 35.6812, lon: 139.7671 },

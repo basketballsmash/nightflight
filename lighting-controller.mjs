@@ -1,4 +1,4 @@
-import { collectLightingGeometry } from "./map-lighting-source.mjs?v=1.1.2-65eb2218";
+import { collectLightingGeometry } from "./map-lighting-source.mjs?v=1.1.3-481c94c1";
 
 const emptyLights = () => ({ type: "FeatureCollection", features: [] });
 export class LightingController {
@@ -14,10 +14,11 @@ export class LightingController {
     this.epoch = 0;
     this.requestId = 0;
     this.signature = "";
+    this.lastView = null;
     this.worker = null;
     try {
       this.worker = new Worker(
-        new URL("./lights-worker.mjs?v=1.1.2-65eb2218", import.meta.url),
+        new URL("./lights-worker.mjs?v=1.1.3-481c94c1", import.meta.url),
         { type: "module" },
       );
       this.worker.onmessage = (event) => this.receive(event.data);
@@ -42,6 +43,7 @@ export class LightingController {
     this.lastRequest = -Infinity;
     this.epoch++;
     this.signature = "";
+    this.lastView = null;
     this.getMap()?.getSource("place-lights")?.setData(emptyLights());
   }
   receive(result) {
@@ -55,6 +57,20 @@ export class LightingController {
     this.getMap()?.getSource("place-lights")?.setData(result.data);
   }
   async update(now, { ready, blocked }) {
+    // Moving through already-loaded tiles does not emit new source-data events.
+    // Refresh the visible light budget as the aircraft and its bank move too.
+    const frame = this.getFrame();
+    if (this.lastView) {
+      const previous = this.lastView;
+      const longitude = ((frame.position.lon - previous.lon + 540) % 360) - 180;
+      const distance =
+        Math.hypot(
+          longitude * Math.cos((frame.position.lat * Math.PI) / 180),
+          frame.position.lat - previous.lat,
+        ) * 111195;
+      if (distance >= 100 || Math.abs(frame.bank - previous.bank) >= 0.5)
+        this.dirty = true;
+    }
     const delay = this.viewDirty ? 900 : 3000;
     if (
       !ready ||
@@ -108,6 +124,7 @@ export class LightingController {
         },
         geometry.transfers,
       );
+      this.lastView = { ...frame.position, bank: frame.bank };
     } catch {
       this.busy = false;
       this.dirty = true;
