@@ -1,4 +1,5 @@
-// Public, keyless services. Change these URLs to use your own providers.
+// Public, keyless services. Change these URLs to use your own providers, and
+// update connect-src in index.html's Content-Security-Policy to match.
 export const CONFIG = Object.freeze({
   vectorSource: "https://tiles.openfreemap.org/planet",
   glyphsURL: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",

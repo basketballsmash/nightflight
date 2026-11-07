@@ -1,18 +1,18 @@
-import * as maplibre from "./vendor/maplibre-gl.mjs?v=1.1.3-481c94c1";
-import { CONFIG } from "./config.mjs?v=1.1.3-481c94c1";
+import * as maplibre from "./vendor/maplibre-gl.mjs?v=1.1.3-7f057a33";
+import { CONFIG } from "./config.mjs?v=1.1.3-7f057a33";
 import {
   clamp,
   normalizeLocation,
   locationFromHash,
   locationHash,
-} from "./flight-math.mjs?v=1.1.3-481c94c1";
-import { flightCamera, VIEW_LIMITS } from "./view-math.mjs?v=1.1.3-481c94c1";
-import { FlightState } from "./flight-state.mjs?v=1.1.3-481c94c1";
-import { ViewControls } from "./view-controls.mjs?v=1.1.3-481c94c1";
-import { SkyRenderer } from "./sky-renderer.mjs?v=1.1.3-481c94c1";
-import { LightingController } from "./lighting-controller.mjs?v=1.1.3-481c94c1";
-import { PlacePicker } from "./place-picker.mjs?v=1.1.3-481c94c1";
-import { createNightStyle } from "./night-style.mjs?v=1.1.3-481c94c1";
+} from "./flight-math.mjs?v=1.1.3-7f057a33";
+import { flightCamera, VIEW_LIMITS } from "./view-math.mjs?v=1.1.3-7f057a33";
+import { FlightState } from "./flight-state.mjs?v=1.1.3-7f057a33";
+import { ViewControls } from "./view-controls.mjs?v=1.1.3-7f057a33";
+import { SkyRenderer } from "./sky-renderer.mjs?v=1.1.3-7f057a33";
+import { LightingController } from "./lighting-controller.mjs?v=1.1.3-7f057a33";
+import { PlacePicker } from "./place-picker.mjs?v=1.1.3-7f057a33";
+import { createNightStyle } from "./night-style.mjs?v=1.1.3-7f057a33";
 
 const MAP_HANDLERS = [
   "dragPan",
@@ -174,7 +174,7 @@ class NightflightApp {
       retry.textContent = "Retry";
       retry.addEventListener("click", () => window.location.reload());
       const offline = document.createElement("a");
-      offline.href = "./offline.html?v=1.1.3-481c94c1";
+      offline.href = "./offline.html?v=1.1.3-7f057a33";
       offline.textContent = "Offline flight";
       notice.append(
         document.createTextNode(" "),
@@ -193,7 +193,7 @@ class NightflightApp {
   }
   initializeMap() {
     maplibre.setWorkerUrl(
-      new URL("./vendor/maplibre-gl-worker.mjs?v=1.1.3-481c94c1", import.meta.url).href,
+      new URL("./vendor/maplibre-gl-worker.mjs?v=1.1.3-7f057a33", import.meta.url).href,
     );
     maplibre.setWorkerCount(2);
     try {

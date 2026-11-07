@@ -34,8 +34,37 @@ const files = [
 ];
 const asset = /(\.\/[^"'\s<>]+\.(?:mjs|js|css|html))(?:\?v=[^"'\s<>]*)?/g;
 const label = /(<div\s+id="build-version"[^>]*>)[^<]*(<\/div>)/;
+// Inline <script>/<style> blocks are allowed by hash, so the CSP must be
+// re-stamped whenever their text (including versioned URLs) changes.
+const csp = /(<meta\s+http-equiv="Content-Security-Policy"\s+content=")([^"]*)(")/;
+const inlineSources = { "script-src": "script", "style-src": "style" };
+function inlineHashes(tag, text) {
+  return [...text.matchAll(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, "g"))].map(
+    (match) =>
+      `'sha256-${createHash("sha256").update(match[1]).digest("base64")}'`,
+  );
+}
+function stampCsp(text, hashes = true) {
+  return text.replace(csp, (_, open, policy, close) => {
+    const directives = policy
+      .split(";")
+      .map((directive) => directive.trim())
+      .filter(Boolean)
+      .map((directive) => {
+        const [name, ...sources] = directive.split(/\s+/),
+          kept = sources.filter((source) => !source.startsWith("'sha256-"));
+        if (!inlineSources[name]) return directive;
+        const added = hashes ? inlineHashes(inlineSources[name], text) : [];
+        return [name, ...kept, ...added].join(" ");
+      });
+    return open + directives.join("; ") + close;
+  });
+}
 function canonical(text) {
-  return text.replace(asset, "$1").replace(label, "$1__BUILD__$2");
+  return stampCsp(
+    text.replace(asset, "$1").replace(label, "$1__BUILD__$2"),
+    false,
+  );
 }
 const content = new Map(files.map((file) => [file, canonical(read(file))]));
 const hash = createHash("sha256").update(version + "\n");
@@ -51,9 +80,11 @@ const build = hash.digest("hex").slice(0, 8),
 let stale = false;
 for (const [file, text] of content) {
   const mode = file === "offline.html" ? "offline" : "world";
-  const output = text
-    .replace(asset, (_, url) => `${url}?v=${token}`)
-    .replace(label, `$1v${version} · ${build} · ${mode}$2`);
+  const output = stampCsp(
+    text
+      .replace(asset, (_, url) => `${url}?v=${token}`)
+      .replace(label, `$1v${version} · ${build} · ${mode}$2`),
+  );
   if (output !== read(file)) {
     stale = true;
     if (!check) writeFileSync(path.join(root, file), output);

@@ -1,4 +1,4 @@
-import { collectLightingGeometry } from "./map-lighting-source.mjs?v=1.1.3-481c94c1";
+import { collectLightingGeometry } from "./map-lighting-source.mjs?v=1.1.3-7f057a33";
 
 const emptyLights = () => ({ type: "FeatureCollection", features: [] });
 export class LightingController {
@@ -18,7 +18,7 @@ export class LightingController {
     this.worker = null;
     try {
       this.worker = new Worker(
-        new URL("./lights-worker.mjs?v=1.1.3-481c94c1", import.meta.url),
+        new URL("./lights-worker.mjs?v=1.1.3-7f057a33", import.meta.url),
         { type: "module" },
       );
       this.worker.onmessage = (event) => this.receive(event.data);
