@@ -18,6 +18,19 @@ const hash = (x, y, s = 0) => {
   n = Math.imul(n ^ (n >>> 13), 1274126177);
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
 };
+// Bigger roads keep more of their lamps whenever lamps must be thinned, so
+// the road network still reads as lines, not uniform speckle.
+export const ROAD_WEIGHT = {
+  motorway: 4,
+  trunk: 3,
+  primary: 2.5,
+  secondary: 2,
+  tertiary: 1.3,
+  minor: 1,
+  service: 0.8,
+};
+export const lampPriority = (lamp, value = lamp._h) =>
+  value / (ROAD_WEIGHT[lamp._cls] ?? 1);
 export function roadLights(
   features,
   maxPoints = 7000,
@@ -65,14 +78,18 @@ export function roadLights(
             y = a[1] + dy * t,
             key = "r:" + Math.round(x / 14) + ":" + Math.round(y / 14);
           if (output.has(key)) continue;
-          const coordinates = unproject([x, y]);
-          if (!acceptPoint(coordinates, feature)) continue;
+          const coordinates = unproject([x, y]),
+            // Stable per-lamp value used to fade minor roads out by distance.
+            lod = hash(Math.round(x / 14), Math.round(y / 14), 61);
+          if (!acceptPoint(coordinates, feature, lod)) continue;
           const r = hash(Math.round(x / 14), Math.round(y / 14), 17),
             white = cls === "motorway" || cls === "trunk";
           output.set(key, {
             type: "Feature",
             id: key,
             _zoom: feature.tile?.z ?? 0,
+            _cls: cls,
+            _h: lod,
             geometry: { type: "Point", coordinates },
             properties: {
               kind: "road",
@@ -81,11 +98,17 @@ export function roadLights(
               opacity: major ? 0.65 + r * 0.3 : 0.35 + r * 0.3,
             },
           });
-          if (output.size >= maxPoints) return [...output.values()];
         }
       }
   }
-  return [...output.values()];
+  // Over budget: thin evenly by each lamp's stable hash. Stopping early
+  // instead dropped whole (often 100 km long) roads that happened to come
+  // last, leaving straight-edged dark sectors in the distance.
+  const lamps = [...output.values()];
+  if (lamps.length <= maxPoints) return lamps;
+  return lamps
+    .sort((a, b) => lampPriority(a) - lampPriority(b))
+    .slice(0, maxPoints);
 }
 export function visibilityFor(view) {
   if (!view) return () => true;

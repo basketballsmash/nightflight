@@ -53,3 +53,59 @@ test("cruising refreshes lights without tile events, within the update budget", 
     else globalThis.Worker = originalWorker;
   }
 });
+
+test("tiles that arrive while looking around are lit within 250 ms, even mid-drag", async () => {
+  const originalWorker = globalThis.Worker;
+  const requests = [];
+  globalThis.Worker = class {
+    postMessage(message) {
+      requests.push(message);
+    }
+  };
+  try {
+    const frame = {
+      position: { lat: 35, lon: 139 },
+      heading: 90,
+      bank: 0,
+      tilt: 24,
+      yaw: 0,
+      width: 1200,
+      height: 800,
+    };
+    const map = {
+      querySourceFeatures: () => [],
+      getCenter: () => ({ lng: 139, lat: 35 }),
+    };
+    let dragging = false;
+    const controller = new LightingController({
+      getMap: () => map,
+      getFrame: () => frame,
+      isDragging: () => dragging,
+    });
+    await controller.update(1000, { ready: true, blocked: false });
+    controller.receive({ epoch: 0 });
+    assert.equal(requests.length, 1);
+
+    dragging = true;
+    controller.markViewChanged(1100);
+    await controller.update(1500, { ready: true, blocked: false });
+    assert.equal(requests.length, 1, "plain dragging keeps its 700 ms pace");
+
+    controller.markDataChanged(1600);
+    await controller.update(1650, { ready: true, blocked: false });
+    assert.equal(requests.length, 2, "new tiles are lit right away");
+    controller.receive({ epoch: 0 });
+
+    dragging = false;
+    controller.markDataChanged(9000);
+    await controller.update(9300, { ready: true, blocked: false });
+    assert.equal(requests.length, 3, "cruising refresh after the 3 s pace");
+    controller.receive({ epoch: 0 });
+    controller.markDataChanged(9400);
+    await controller.update(9700, { ready: true, blocked: false });
+    assert.equal(requests.length, 3, "no fast path without recent interaction");
+  } finally {
+    if (originalWorker === undefined) delete globalThis.Worker;
+    else globalThis.Worker = originalWorker;
+  }
+});

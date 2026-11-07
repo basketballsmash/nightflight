@@ -2,12 +2,12 @@ import {
   normalizeLocation,
   parseCoordinates,
   locationHash,
-} from "./flight-math.mjs?v=1.1.3-06b3bb85";
+} from "./flight-math.mjs?v=1.1.3-e4223098";
 import {
   PlaceSearch,
   SearchThrottleError,
   searchResults,
-} from "./place-search.mjs?v=1.1.3-06b3bb85";
+} from "./place-search.mjs?v=1.1.3-e4223098";
 
 const PRESETS = [
   { name: "Tokyo", lat: 35.6812, lon: 139.7671 },
@@ -22,12 +22,7 @@ const OVERVIEW_LAYERS = [
   "overview-borders",
   "overview-labels",
 ];
-const FLIGHT_LIGHT_LAYERS = [
-  "building-lamps",
-  "building-halos",
-  "arterial-lamps",
-  "road-halos",
-];
+const FLIGHT_LIGHT_LAYERS = ["night-lights"];
 
 export class PlacePicker {
   constructor({

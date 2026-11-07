@@ -1,18 +1,19 @@
 import * as maplibre from "./vendor/maplibre-gl.mjs?v=1b6209a7";
-import { CONFIG } from "./config.mjs?v=1.1.3-06b3bb85";
+import { CONFIG } from "./config.mjs?v=1.1.3-e4223098";
 import {
   clamp,
   normalizeLocation,
   locationFromHash,
   locationHash,
-} from "./flight-math.mjs?v=1.1.3-06b3bb85";
-import { flightCamera, VIEW_LIMITS } from "./view-math.mjs?v=1.1.3-06b3bb85";
-import { FlightState } from "./flight-state.mjs?v=1.1.3-06b3bb85";
-import { ViewControls } from "./view-controls.mjs?v=1.1.3-06b3bb85";
-import { SkyRenderer } from "./sky-renderer.mjs?v=1.1.3-06b3bb85";
-import { LightingController } from "./lighting-controller.mjs?v=1.1.3-06b3bb85";
-import { PlacePicker } from "./place-picker.mjs?v=1.1.3-06b3bb85";
-import { createNightStyle } from "./night-style.mjs?v=1.1.3-06b3bb85";
+} from "./flight-math.mjs?v=1.1.3-e4223098";
+import { flightCamera, VIEW_LIMITS } from "./view-math.mjs?v=1.1.3-e4223098";
+import { FlightState } from "./flight-state.mjs?v=1.1.3-e4223098";
+import { ViewControls } from "./view-controls.mjs?v=1.1.3-e4223098";
+import { SkyRenderer } from "./sky-renderer.mjs?v=1.1.3-e4223098";
+import { LightingController } from "./lighting-controller.mjs?v=1.1.3-e4223098";
+import { PlacePicker } from "./place-picker.mjs?v=1.1.3-e4223098";
+import { createNightStyle } from "./night-style.mjs?v=1.1.3-e4223098";
+import { createLightsLayer } from "./night-lights-layer.mjs?v=1.1.3-e4223098";
 
 const MAP_HANDLERS = [
   "dragPan",
@@ -100,7 +101,9 @@ class NightflightApp {
         this.wake();
       },
     });
+    this.lightsLayer = createLightsLayer();
     this.lighting = new LightingController({
+      lights: this.lightsLayer,
       getMap: () => this.map,
       getFrame: () => this.frame(),
       isDragging: () => this.view.isDragging,
@@ -174,7 +177,7 @@ class NightflightApp {
       retry.textContent = "Retry";
       retry.addEventListener("click", () => window.location.reload());
       const offline = document.createElement("a");
-      offline.href = "./offline.html?v=1.1.3-06b3bb85";
+      offline.href = "./offline.html?v=1.1.3-e4223098";
       offline.textContent = "Offline flight";
       notice.append(
         document.createTextNode(" "),
@@ -234,6 +237,7 @@ class NightflightApp {
           this.lighting.markDataChanged(performance.now());
       });
       this.map.on("load", () => {
+        this.map.addLayer(this.lightsLayer, "overview-borders");
         this.ready = true;
         this.elements.map.dataset.state = this.mapFailed ? "error" : "ready";
         clearTimeout(this.noticeTimer);

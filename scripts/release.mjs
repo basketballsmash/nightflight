@@ -31,6 +31,7 @@ const files = [
   "lighting-controller.mjs",
   "map-lighting-source.mjs",
   "light-geometry.mjs",
+  "night-lights-layer.mjs",
 ];
 const asset = /(\.\/[^"'\s<>]+\.(?:mjs|js|css|html))(?:\?v=[^"'\s<>]*)?/g;
 const label = /(<div\s+id="build-version"[^>]*>)[^<]*(<\/div>)/;

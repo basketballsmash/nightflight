@@ -63,3 +63,29 @@ test("empty, non-polygon, and faraway data produce no local light points", () =>
     0,
   );
 });
+test("tile clipping never changes which lights exist (no tile-shaped density edges)", () => {
+  // The same neighbourhood, whole and cut into the four pieces vector tiles
+  // would deliver, must light up identically: density depends on distance only.
+  const square = (x0, y0, x1, y1) => ({
+    properties: { class: "residential" },
+    geometry: {
+      type: "Polygon",
+      coordinates: [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]],
+    },
+  });
+  for (const center of [[139.02, 35.02], [139.3, 35.02]]) {
+    const ids = (areas) =>
+      createPlaceLights(areas, { center, maxPoints: 1e6 })
+        .features.map((f) => f.id)
+        .sort();
+    const whole = ids([square(139, 35, 139.08, 35.08)]),
+      pieces = ids([
+        square(139, 35, 139.04, 35.04),
+        square(139.04, 35, 139.08, 35.04),
+        square(139, 35.04, 139.04, 35.08),
+        square(139.04, 35.04, 139.08, 35.08),
+      ]);
+    assert.ok(whole.length > 20);
+    assert.deepEqual(pieces, whole);
+  }
+});

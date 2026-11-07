@@ -1,8 +1,31 @@
 // The only adapter coupled to the pinned MapLibre tile representation.
 // Keep geometry as transferable MVT coordinates until it reaches the worker.
+// Minor roads are faded out by 13 km (lights-worker.mjs), so only nearby
+// tiles need them; there they are taken whole instead of thinned per tile,
+// which used to make busy tiles sparser than quiet neighbours.
+const MAJOR_ROADS = ["motorway", "trunk", "primary", "secondary", "tertiary"],
+  MINOR_ROADS = ["minor", "service"],
+  MINOR_RANGE = 15000;
+function tileDistance(canonical, origin) {
+  const n = 2 ** canonical.z,
+    lon = (x) => (x / n) * 360 - 180,
+    lat = (y) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * 180) / Math.PI,
+    west = lon(canonical.x),
+    east = lon(canonical.x + 1),
+    north = lat(canonical.y),
+    south = lat(canonical.y + 1),
+    cx = Math.max(west, Math.min(east, origin[0])),
+    cy = Math.max(south, Math.min(north, origin[1]));
+  return (
+    Math.hypot(
+      (cx - origin[0]) * Math.cos((origin[1] * Math.PI) / 180),
+      cy - origin[1],
+    ) * 111195
+  );
+}
 export async function collectLightingGeometry(
   map,
-  { isCancelled = () => false } = {},
+  { isCancelled = () => false, origin = null } = {},
 ) {
   const areas = [],
     roads = [],
@@ -48,8 +71,8 @@ export async function collectLightingGeometry(
     seen = new Set();
   let deadline = performance.now() + 3;
   if (ids) {
-    const roadQuota = Math.max(24, Math.ceil(6000 / Math.max(1, ids.length))),
-      areaQuota = Math.max(6, Math.ceil(1400 / Math.max(1, ids.length)));
+    // Generous: dropping a clipped polygon piece leaves a tile-shaped hole.
+    const areaQuota = Math.max(40, Math.ceil(4000 / Math.max(1, ids.length)));
     for (const id of ids) {
       const tile = manager.getTileByID(id),
         canonical = tile?.tileID?.canonical;
@@ -58,6 +81,7 @@ export async function collectLightingGeometry(
       if (seen.has(key)) continue;
       seen.add(key);
       tiles.push({ x: canonical.x, y: canonical.y, z: canonical.z });
+      const near = !origin || tileDistance(canonical, origin) < MINOR_RANGE;
       for (const [layer, allowed, output, quota] of [
         [
           "landuse",
@@ -65,20 +89,8 @@ export async function collectLightingGeometry(
           areas,
           areaQuota,
         ],
-        [
-          "transportation",
-          [
-            "motorway",
-            "trunk",
-            "primary",
-            "secondary",
-            "tertiary",
-            "minor",
-            "service",
-          ],
-          roads,
-          roadQuota,
-        ],
+        ["transportation", MAJOR_ROADS, roads, 4000],
+        ...(near ? [["transportation", MINOR_ROADS, roads, 6000]] : []),
       ]) {
         const features = [];
         tile.querySourceFeatures(features, {

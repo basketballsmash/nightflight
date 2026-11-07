@@ -1,8 +1,8 @@
-import { collectLightingGeometry } from "./map-lighting-source.mjs?v=1.1.3-06b3bb85";
+import { collectLightingGeometry } from "./map-lighting-source.mjs?v=1.1.3-e4223098";
 
-const emptyLights = () => ({ type: "FeatureCollection", features: [] });
 export class LightingController {
-  constructor({ getMap, getFrame, isDragging }) {
+  constructor({ getMap, getFrame, isDragging, lights = null }) {
+    this.lights = lights;
     this.getMap = getMap;
     this.getFrame = getFrame;
     this.isDragging = isDragging;
@@ -10,15 +10,15 @@ export class LightingController {
     this.viewDirty = true;
     this.lastRequest = -Infinity;
     this.lastInteraction = 0;
+    this.tilesArrived = false;
     this.busy = false;
     this.epoch = 0;
     this.requestId = 0;
-    this.signature = "";
     this.lastView = null;
     this.worker = null;
     try {
       this.worker = new Worker(
-        new URL("./lights-worker.mjs?v=1.1.3-06b3bb85", import.meta.url),
+        new URL("./lights-worker.mjs?v=1.1.3-e4223098", import.meta.url),
         { type: "module" },
       );
       this.worker.onmessage = (event) => this.receive(event.data);
@@ -31,7 +31,12 @@ export class LightingController {
   }
   markDataChanged(now) {
     this.dirty = true;
-    if (now - this.lastInteraction < 2500) this.viewDirty = true;
+    // While someone is looking around, newly arrived tiles are usually the
+    // direction they just turned to: light them up without waiting.
+    if (now - this.lastInteraction < 2500) {
+      this.viewDirty = true;
+      this.tilesArrived = true;
+    }
   }
   markViewChanged(now) {
     this.dirty = true;
@@ -42,19 +47,16 @@ export class LightingController {
     this.markViewChanged(now);
     this.lastRequest = -Infinity;
     this.epoch++;
-    this.signature = "";
     this.lastView = null;
-    this.getMap()?.getSource("place-lights")?.setData(emptyLights());
+    this.lights?.clear();
   }
   receive(result) {
     this.busy = false;
-    if (result.epoch !== this.epoch || result.error || !result.data) return;
-    const signature = result.data.features
-      .map((feature) => feature.id)
-      .join("|");
-    if (signature === this.signature) return;
-    this.signature = signature;
-    this.getMap()?.getSource("place-lights")?.setData(result.data);
+    if (result.epoch !== this.epoch || result.error || !result.diff) return;
+    const { add, remove } = result.diff;
+    if (!add.length && !remove.length) return;
+    // Only changed lights are applied; the GPU layer draws them next frame.
+    this.lights?.applyDiff(result.diff);
   }
   async update(now, { ready, blocked }) {
     // Moving through already-loaded tiles does not emit new source-data events.
@@ -71,12 +73,20 @@ export class LightingController {
       if (distance >= 100 || Math.abs(frame.bank - previous.bank) >= 0.5)
         this.dirty = true;
     }
-    const delay = this.viewDirty ? 900 : 3000;
+    // Lights around the view already exist, so a view change only needs a
+    // re-prioritisation; it may run while dragging, at a gentler pace.
+    const dragging = this.isDragging(),
+      delay = this.tilesArrived
+        ? 250
+        : dragging
+          ? 700
+          : this.viewDirty
+            ? 450
+            : 3000;
     if (
       !ready ||
       blocked ||
-      this.isDragging() ||
-      now - this.lastInteraction < 450 ||
+      (!dragging && !this.tilesArrived && now - this.lastInteraction < 150) ||
       !this.dirty ||
       this.busy ||
       !this.worker ||
@@ -85,12 +95,15 @@ export class LightingController {
       return;
     this.dirty = false;
     this.viewDirty = false;
+    this.tilesArrived = false;
     this.lastRequest = now;
     this.busy = true;
     const epoch = this.epoch;
     try {
+      const origin = this.getFrame().position;
       const geometry = await collectLightingGeometry(this.getMap(), {
-        isCancelled: () => epoch !== this.epoch || this.isDragging(),
+        isCancelled: () => epoch !== this.epoch,
+        origin: [origin.lon, origin.lat],
       });
       if (!geometry) {
         this.busy = false;
@@ -120,7 +133,6 @@ export class LightingController {
             bearing: frame.heading - 90 + frame.yaw,
             roll: frame.bank * 0.5,
           },
-          maxPoints: 12000,
         },
         geometry.transfers,
       );

@@ -6,12 +6,6 @@ export function createNightStyle(sourceURL, glyphsURL) {
     glyphs: glyphsURL,
     sources: {
       world: { type: "vector", url: sourceURL },
-      "place-lights": {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-        maxzoom: 14,
-        buffer: 16,
-      },
     },
     sky: {
       "sky-color": "#020306",
@@ -104,62 +98,7 @@ export function createNightStyle(sourceURL, glyphsURL) {
           ],
         },
       },
-      {
-        id: "building-halos",
-        type: "circle",
-        source: "place-lights",
-        filter: ["==", ["get", "kind"], "building"],
-        paint: {
-          "circle-pitch-scale": "viewport",
-          "circle-pitch-alignment": "viewport",
-          "circle-color": ["get", "color"],
-          "circle-radius": ["*", ["get", "radius"], 3.4],
-          "circle-blur": 1,
-          "circle-opacity": ["*", ["get", "opacity"], 0.18],
-        },
-      },
-      {
-        id: "building-lamps",
-        type: "circle",
-        source: "place-lights",
-        filter: ["==", ["get", "kind"], "building"],
-        paint: {
-          "circle-pitch-scale": "viewport",
-          "circle-pitch-alignment": "viewport",
-          "circle-color": ["get", "color"],
-          "circle-radius": ["get", "radius"],
-          "circle-blur": 0.18,
-          "circle-opacity": ["get", "opacity"],
-        },
-      },
-      {
-        id: "road-halos",
-        type: "circle",
-        source: "place-lights",
-        filter: ["==", ["get", "kind"], "road"],
-        paint: {
-          "circle-pitch-scale": "viewport",
-          "circle-pitch-alignment": "viewport",
-          "circle-color": ["get", "color"],
-          "circle-radius": ["*", ["get", "radius"], 2.8],
-          "circle-blur": 1,
-          "circle-opacity": ["*", ["get", "opacity"], 0.13],
-        },
-      },
-      {
-        id: "arterial-lamps",
-        type: "circle",
-        source: "place-lights",
-        filter: ["==", ["get", "kind"], "road"],
-        paint: {
-          "circle-pitch-scale": "viewport",
-          "circle-pitch-alignment": "viewport",
-          "circle-color": ["get", "color"],
-          "circle-radius": ["get", "radius"],
-          "circle-blur": 0.15,
-          "circle-opacity": ["get", "opacity"],
-        },
-      },
+      // City lights are drawn by night-lights-layer.mjs, inserted here.
       {
         id: "overview-borders",
         type: "line",
