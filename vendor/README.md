@@ -4,7 +4,7 @@ Version: 6.16.0, from the published `maplibre-gl` npm package.
 
 - `maplibre-gl.mjs`: browser ES module
 - `maplibre-gl-worker.mjs`: browser module worker
-- `maplibre-gl.css`: map UI stylesheet
+- `maplibre-gl.css`: map UI stylesheet, kept for reference only. The page does not load it; the few rules Nightflight needs are copied into `nightflight.css`. Re-check that subset when upgrading MapLibre.
 - `MAPLIBRE-LICENSE.txt`: BSD-3-Clause license
 
 Source: https://github.com/maplibre/maplibre-gl-js

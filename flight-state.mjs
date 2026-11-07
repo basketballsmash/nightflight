@@ -1,4 +1,4 @@
-import { clamp, destination } from "./flight-math.mjs?v=1.1.3-7f057a33";
+import { clamp, destination } from "./flight-math.mjs?v=1.1.3-06b3bb85";
 
 export function seededRandom(number, salt = 0) {
   let value = Math.imul(number, 374761393) ^ Math.imul(salt, 668265263);

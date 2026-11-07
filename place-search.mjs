@@ -1,4 +1,4 @@
-import { normalizeLocation } from "./flight-math.mjs?v=1.1.3-7f057a33";
+import { normalizeLocation } from "./flight-math.mjs?v=1.1.3-06b3bb85";
 
 export class SearchThrottleError extends Error {}
 function browserStorage() {

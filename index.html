@@ -4,14 +4,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-C9P/1YPww4A8TrYFBQG7L6/ACel/bVFCmrHh4oBSevM='; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://tiles.openfreemap.org https://photon.komoot.io; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'sha256-cVmHhqhHXkjYQ1YBtgxZ6FV6gZFzl7/3bViPmIQD3NU='; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://tiles.openfreemap.org https://photon.komoot.io; worker-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#020306">
 <meta name="description" content="Choose any city and drift over its real streets in an endless night flight.">
 <title>Nightflight</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%2304070c%22/%3E%3Cpath d=%22M7 23L16 8l9 15%22 fill=%22none%22 stroke=%22%23d7ad6d%22 stroke-width=%222%22/%3E%3C/svg%3E">
-<link rel="stylesheet" href="./vendor/maplibre-gl.css?v=1.1.3-7f057a33">
-<link rel="stylesheet" href="./nightflight.css?v=1.1.3-7f057a33">
+<link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin>
+<link rel="modulepreload" href="./vendor/maplibre-gl.mjs?v=1b6209a7">
+<link rel="stylesheet" href="./nightflight.css?v=1.1.3-06b3bb85">
 </head>
 <body>
 <div id="map" aria-label="Real-world night flight map"></div>
@@ -32,14 +33,14 @@
  <div id="presets" class="presets" aria-label="Places to try"></div>
  <div class="route-setting"><label for="heading">Flight direction</label><select id="heading"><option value="0">North</option><option value="45">Northeast</option><option value="90" selected>East</option><option value="135">Southeast</option><option value="180">South</option><option value="225">Southwest</option><option value="270">West</option><option value="315">Northwest</option></select></div>
  <div class="dialog-actions"><button id="pick-map" type="button">Choose on the map</button><button id="copy-link" type="button">Copy flight link</button></div>
- <p class="fine-print">Real streets and coastlines, styled as night lights. Search by <a href="https://github.com/komoot/photon" target="_blank" rel="noopener noreferrer">Photon</a>. <a href="./offline.html?v=1.1.3-7f057a33">Offline flight</a></p>
+ <p class="fine-print">Real streets and coastlines, styled as night lights. Search by <a href="https://github.com/komoot/photon" target="_blank" rel="noopener noreferrer">Photon</a>. <a href="./offline.html?v=1.1.3-06b3bb85">Offline flight</a></p>
 </dialog>
-<footer class="attribution"><div id="build-version" class="build-version">v1.1.3 · 7f057a33 · world</div><div><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a> · <a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a></div></footer>
+<footer class="attribution"><div id="build-version" class="build-version">v1.1.3 · 06b3bb85 · world</div><div><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> · <a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a> · <a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a></div></footer>
 <div class="sr-only" id="flight-status" role="status">Cruising</div>
-<noscript><p class="fatal">Enable JavaScript to fly. <a href="./offline.html?v=1.1.3-7f057a33">Open the offline flight</a>.</p></noscript>
+<noscript><p class="fatal">Enable JavaScript to fly. <a href="./offline.html?v=1.1.3-06b3bb85">Open the offline flight</a>.</p></noscript>
 <script>
-if(location.protocol==='file:'){const notice=document.getElementById('notice');notice.textContent='World flights need HTTP hosting. Use GitHub Pages or a local static server. ';const link=document.createElement('a');link.href='./offline.html?v=1.1.3-7f057a33';link.textContent='Open the offline flight';notice.append(link);}
+if(location.protocol==='file:'){const notice=document.getElementById('notice');notice.textContent='World flights need HTTP hosting. Use GitHub Pages or a local static server. ';const link=document.createElement('a');link.href='./offline.html?v=1.1.3-06b3bb85';link.textContent='Open the offline flight';notice.append(link);}
 </script>
-<script type="module" src="./nightflight.mjs?v=1.1.3-7f057a33"></script>
+<script type="module" src="./nightflight.mjs?v=1.1.3-06b3bb85"></script>
 </body>
 </html>

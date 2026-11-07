@@ -44,7 +44,7 @@ The bottom-right label shows the release, a content-based build ID, and whether 
 node scripts/release.mjs 1.1.1
 ```
 
-Use the next version number. This updates both labels, all local asset cache keys, and the Content-Security-Policy hashes for the inline `<script>`/`<style>` blocks; commit and push the resulting files together. `node scripts/release.mjs --check` verifies that the stamp matches the source. Running the script without a version refreshes the content-based build ID for the current release. No build command is needed on GitHub Pages because these stamped files are checked in.
+Use the next version number. This updates both labels, all local asset cache keys (files in `vendor/` are keyed by their own content, so they stay cached across app releases), and the Content-Security-Policy hashes for the inline `<script>`/`<style>` blocks; commit and push the resulting files together. `node scripts/release.mjs --check` verifies that the stamp matches the source. Running the script without a version refreshes the content-based build ID for the current release. No build command is needed on GitHub Pages because these stamped files are checked in.
 
 Both pages declare a Content-Security-Policy `<meta>` tag. If you point `config.mjs` at different tile, glyph, or search providers, add their origins to `connect-src` in `index.html`.
 
