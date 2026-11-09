@@ -38,10 +38,32 @@ export function insidePolygon(point, rings) {
     !rings.slice(1).some((ring) => insideRing(point, ring))
   );
 }
-export function createPlaceLights(features, { center, maxPoints = 4500 } = {}) {
+// Density depends only on where a light is (its distance from the centre),
+// never on the polygon it came from. Vector tiles clip one neighbourhood into
+// per-tile pieces, so a per-polygon density made small clipped pieces glow far
+// more densely than their neighbours, leaving tile-shaped boundaries.
+export const NEAR_DISTANCE = 20000; // metres of full lattice density
+// Gentle 1/d falloff: about as many lights per kilometre of distance near as
+// far, which matches the former look while staying independent of tiles.
+// It also fades to nothing between 40 and 65 km instead of stopping at a
+// hard circle, which would read as a line across the view.
+export const densityAt = (metres, near = NEAR_DISTANCE) =>
+  Math.min(1, near / Math.max(metres, 1)) *
+  Math.max(0, Math.min(1, (65000 - metres) / 25000));
+const GRID = 160;
+export function createPlaceLights(
+  features,
+  { center, maxPoints = 4500, nearDistance = NEAR_DISTANCE } = {},
+) {
   const focus = mercator(center || [0, 0]),
-    limit = 65000 / Math.max(0.12, Math.cos((center?.[1] || 0) * rad)),
+    cos = Math.max(0.12, Math.cos((center?.[1] || 0) * rad)),
+    limit = 65000 / cos,
+    world = 2 * Math.PI * R,
     polygons = [];
+  const offset = (x, y) => [
+    ((x - focus[0] + world * 1.5) % world) - world / 2,
+    y - focus[1],
+  ];
   for (const feature of features) {
     const geometry = feature.geometry;
     if (!geometry) continue;
@@ -65,44 +87,62 @@ export function createPlaceLights(features, { center, maxPoints = 4500 } = {}) {
         minY = Math.min(minY, y);
         maxY = Math.max(maxY, y);
       }
-      const x = (minX + maxX) / 2,
-        y = (minY + maxY) / 2,
-        dist = Math.hypot(
-          ((x - focus[0] + 2 * Math.PI * R * 1.5) % (2 * Math.PI * R)) -
-            Math.PI * R,
-          y - focus[1],
-        );
-      if (dist > limit + Math.hypot(maxX - minX, maxY - minY) / 2) continue;
+      const [cx, cy] = offset((minX + maxX) / 2, (minY + maxY) / 2);
+      if (Math.hypot(cx, cy) > limit + Math.hypot(maxX - minX, maxY - minY) / 2)
+        continue;
       polygons.push({
         rings,
         minX,
         minY,
         maxX,
         maxY,
-        dist,
-        kind: feature.properties?.class || "building",
         building:
           feature.sourceLayer === "building" ||
           feature.properties?.lightBuilding === true,
       });
     }
   }
-  polygons.sort(
-    (a, b) => Number(b.building) - Number(a.building) || a.dist - b.dist,
-  );
   const seen = new Set(),
-    points = [];
-  function add(point, polygon, grid) {
-    const key =
-      "b:" + Math.floor(point[0] / 160) + ":" + Math.floor(point[1] / 160);
+    candidates = [];
+  function consider(gx, gy, polygon, always) {
+    const key = "b:" + gx + ":" + gy;
     if (seen.has(key)) return;
+    const point = [
+        (gx + 0.18 + hash(gx, gy, 1) * 0.64) * GRID,
+        (gy + 0.18 + hash(gx, gy, 2) * 0.64) * GRID,
+      ],
+      [dx, dy] = offset(point[0], point[1]),
+      distance = Math.hypot(dx, dy) * cos;
+    if (distance > 65000) return;
+    // Thin smoothly with distance (never by polygon), so there are no bands.
+    if (!always && hash(gx, gy, 419) >= densityAt(distance, nearDistance))
+      return;
+    if (!insidePolygon(point, polygon.rings)) return;
     seen.add(key);
-    const x = Math.floor(point[0] / 160),
-      y = Math.floor(point[1] / 160),
-      r = hash(x, y, 107),
-      commercial = hash(x, y, 211) > 0.7,
+    if (hash(gx, gy, 107) < 0.13) return;
+    candidates.push({ key, gx, gy, point, distance });
+  }
+  for (const polygon of polygons) {
+    const { minX, minY, maxX, maxY } = polygon;
+    if (polygon.building) {
+      // One light per mapped building, at a stable lattice position.
+      consider(
+        Math.floor((minX + maxX) / (2 * GRID)),
+        Math.floor((minY + maxY) / (2 * GRID)),
+        polygon,
+        true,
+      );
+      continue;
+    }
+    for (let gy = Math.ceil(minY / GRID - 1); gy * GRID <= maxY; gy++)
+      for (let gx = Math.ceil(minX / GRID - 1); gx * GRID <= maxX; gx++)
+        consider(gx, gy, polygon, false);
+  }
+  // Nearest first, so a full budget ends in a circle, not at polygon edges.
+  candidates.sort((a, b) => a.distance - b.distance || (a.key < b.key ? -1 : 1));
+  const points = candidates.slice(0, maxPoints).map(({ key, gx: x, gy: y, point }) => {
+    const commercial = hash(x, y, 211) > 0.7,
       shade = hash(x, y, 173);
-    if (r < 0.13) return;
     const color =
       shade > 0.94
         ? "#a9c4e1"
@@ -113,9 +153,10 @@ export function createPlaceLights(features, { center, maxPoints = 4500 } = {}) {
             : shade > 0.2
               ? "#f4b65c"
               : "#df893d";
-    points.push({
+    return {
       type: "Feature",
       id: key,
+      _h: hash(x, y, 419),
       geometry: { type: "Point", coordinates: lngLat(point) },
       properties: {
         kind: "building",
@@ -123,40 +164,7 @@ export function createPlaceLights(features, { center, maxPoints = 4500 } = {}) {
         radius: (0.55 + hash(x, y, 31) * 0.7) * (commercial ? 1.15 : 1),
         opacity: 0.32 + hash(x, y, 53) * 0.58,
       },
-    });
-  }
-  for (const polygon of polygons) {
-    if (points.length >= maxPoints) break;
-    const { minX, minY, maxX, maxY, rings } = polygon,
-      grid = 160;
-    if (polygon.building) {
-      const gx = Math.floor((minX + maxX) / 320),
-        gy = Math.floor((minY + maxY) / 320),
-        point = [
-          (gx + 0.18 + hash(gx, gy, 1) * 0.64) * grid,
-          (gy + 0.18 + hash(gx, gy, 2) * 0.64) * grid,
-        ];
-      if (insidePolygon(point, rings)) add(point, polygon, grid);
-      continue;
-    }
-    const columns = Math.ceil((maxX - minX) / grid),
-      rows = Math.ceil((maxY - minY) / grid),
-      stride = Math.max(1, Math.ceil(Math.sqrt((columns * rows) / 260))),
-      startX = Math.ceil(minX / grid),
-      startY = Math.ceil(minY / grid);
-    for (let row = 0; row <= rows; row += stride)
-      for (let col = 0; col <= columns; col += stride) {
-        if (points.length >= maxPoints) break;
-        const gx = startX + col,
-          gy = startY + row,
-          point = [
-            (gx + 0.18 + hash(gx, gy, 1) * 0.64) * grid,
-            (gy + 0.18 + hash(gx, gy, 2) * 0.64) * grid,
-          ];
-        if (point[0] > maxX || point[1] > maxY || !insidePolygon(point, rings))
-          continue;
-        add(point, polygon, grid);
-      }
-  }
+    };
+  });
   return { type: "FeatureCollection", features: points };
 }

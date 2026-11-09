@@ -6,6 +6,9 @@ import {
   destination,
   locationFromHash,
   locationHash,
+  cleanPlaceName,
+  MAX_NAME_LENGTH,
+  MAX_SHARED_NAME_LENGTH,
 } from "../flight-math.mjs";
 
 test("coordinates use latitude, longitude, including decimals and negative values", () => {
@@ -94,4 +97,30 @@ test("stationary and high-latitude flight remain finite", () => {
   );
   const polar = destination({ lat: 84.5, lon: 179.9 }, 90, 50000);
   assert.ok(Number.isFinite(polar.lat) && Number.isFinite(polar.lon));
+});
+test("place names drop hidden and control characters but keep real scripts", () => {
+  assert.equal(cleanPlaceName("Tokyo\u202e\u200bStation\n\tJapan"), "TokyoStation Japan");
+  assert.equal(cleanPlaceName("\u0000\u2028  Paris  \u2066"), "Paris");
+  assert.equal(cleanPlaceName("می\u200cخواهم 👩\u200d🚀"), "می\u200cخواهم 👩\u200d🚀");
+  assert.equal(cleanPlaceName(null), "");
+  assert.equal(
+    normalizeLocation({ lat: 1, lon: 2, name: "\u202e\u200b" }).name,
+    "1.0000, 2.0000",
+  );
+});
+test("place names are length-limited without splitting characters", () => {
+  assert.equal(
+    normalizeLocation({ lat: 0, lon: 0, name: "x".repeat(500) }).name.length,
+    MAX_NAME_LENGTH,
+  );
+  assert.equal(cleanPlaceName("🌃".repeat(5), 3), "🌃🌃🌃");
+});
+test("shared links cannot inject long or disguised place names", () => {
+  const long = encodeURIComponent("Alert ".repeat(40));
+  const shared = locationFromHash(`#lat=1&lon=2&name=${long}`);
+  assert.ok(Array.from(shared.name).length <= MAX_SHARED_NAME_LENGTH);
+  assert.equal(
+    locationFromHash("#lat=1&lon=2&name=%E2%80%AEevil%0Aline").name,
+    "evil line",
+  );
 });

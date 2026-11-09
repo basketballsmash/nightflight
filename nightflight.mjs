@@ -1,18 +1,22 @@
-import * as maplibre from "./vendor/maplibre-gl.mjs?v=1.1.3-481c94c1";
-import { CONFIG } from "./config.mjs?v=1.1.3-481c94c1";
+import * as maplibre from "./vendor/maplibre-gl.mjs?v=1b6209a7";
+import { CONFIG } from "./config.mjs?v=1.1.3-7dab4e25";
 import {
   clamp,
   normalizeLocation,
   locationFromHash,
   locationHash,
-} from "./flight-math.mjs?v=1.1.3-481c94c1";
-import { flightCamera, VIEW_LIMITS } from "./view-math.mjs?v=1.1.3-481c94c1";
-import { FlightState } from "./flight-state.mjs?v=1.1.3-481c94c1";
-import { ViewControls } from "./view-controls.mjs?v=1.1.3-481c94c1";
-import { SkyRenderer } from "./sky-renderer.mjs?v=1.1.3-481c94c1";
-import { LightingController } from "./lighting-controller.mjs?v=1.1.3-481c94c1";
-import { PlacePicker } from "./place-picker.mjs?v=1.1.3-481c94c1";
-import { createNightStyle } from "./night-style.mjs?v=1.1.3-481c94c1";
+} from "./flight-math.mjs?v=1.1.3-7dab4e25";
+import { flightCamera, VIEW_LIMITS } from "./view-math.mjs?v=1.1.3-7dab4e25";
+import { FlightState } from "./flight-state.mjs?v=1.1.3-7dab4e25";
+import { ViewControls } from "./view-controls.mjs?v=1.1.3-7dab4e25";
+import { SkyRenderer } from "./sky-renderer.mjs?v=1.1.3-7dab4e25";
+import { LightingController } from "./lighting-controller.mjs?v=1.1.3-7dab4e25";
+import { PlacePicker } from "./place-picker.mjs?v=1.1.3-7dab4e25";
+import { createNightStyle } from "./night-style.mjs?v=1.1.3-7dab4e25";
+import {
+  createLightsLayer,
+  keepLightsLayerAttached,
+} from "./night-lights-layer.mjs?v=1.1.3-7dab4e25";
 
 const MAP_HANDLERS = [
   "dragPan",
@@ -100,7 +104,9 @@ class NightflightApp {
         this.wake();
       },
     });
+    this.lightsLayer = createLightsLayer();
     this.lighting = new LightingController({
+      lights: this.lightsLayer,
       getMap: () => this.map,
       getFrame: () => this.frame(),
       isDragging: () => this.view.isDragging,
@@ -174,7 +180,7 @@ class NightflightApp {
       retry.textContent = "Retry";
       retry.addEventListener("click", () => window.location.reload());
       const offline = document.createElement("a");
-      offline.href = "./offline.html?v=1.1.3-481c94c1";
+      offline.href = "./offline.html?v=1.1.3-7dab4e25";
       offline.textContent = "Offline flight";
       notice.append(
         document.createTextNode(" "),
@@ -193,7 +199,7 @@ class NightflightApp {
   }
   initializeMap() {
     maplibre.setWorkerUrl(
-      new URL("./vendor/maplibre-gl-worker.mjs?v=1.1.3-481c94c1", import.meta.url).href,
+      new URL("./vendor/maplibre-gl-worker.mjs?v=d21b718c", import.meta.url).href,
     );
     maplibre.setWorkerCount(2);
     try {
@@ -232,6 +238,10 @@ class NightflightApp {
       this.map.on("sourcedata", (event) => {
         if (event.sourceId === "world" && event.sourceDataType === "content")
           this.lighting.markDataChanged(performance.now());
+      });
+      keepLightsLayerAttached(this.map, this.lightsLayer, {
+        beforeId: "overview-borders",
+        hidden: () => this.picker.isPicking,
       });
       this.map.on("load", () => {
         this.ready = true;

@@ -1,5 +1,23 @@
 export const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 export const wrapLongitude = (lon) => ((((lon + 180) % 360) + 360) % 360) - 180;
+export const MAX_NAME_LENGTH = 160;
+export const MAX_SHARED_NAME_LENGTH = 80;
+// Control, line/paragraph separator, and invisible format characters (bidi
+// overrides, zero-width spaces) can disguise a place name. ZWNJ/ZWJ stay: they
+// are needed by some scripts and emoji.
+const HIDDEN_TEXT = /[\p{Cc}\p{Zl}\p{Zp}]|(?![\u200c\u200d])\p{Cf}/gu;
+export function cleanPlaceName(value, maxLength = MAX_NAME_LENGTH) {
+  return Array.from(
+    String(value ?? "")
+      .replace(/\s+/g, " ")
+      .replace(HIDDEN_TEXT, "")
+      .replace(/ {2,}/g, " ")
+      .trim(),
+  )
+    .slice(0, maxLength)
+    .join("")
+    .trim();
+}
 export function normalizeLocation(value) {
   if (
     !value ||
@@ -24,10 +42,8 @@ export function normalizeLocation(value) {
     lat,
     lon,
     heading: ((heading % 360) + 360) % 360,
-    name: String(value.name || `${lat.toFixed(4)}, ${lon.toFixed(4)}`).slice(
-      0,
-      160,
-    ),
+    name:
+      cleanPlaceName(value.name) || `${lat.toFixed(4)}, ${lon.toFixed(4)}`,
   };
 }
 export function parseCoordinates(text) {
@@ -67,7 +83,7 @@ export function locationFromHash(hash) {
     lat: params.get("lat"),
     lon: params.get("lon"),
     heading: params.get("heading") ?? 90,
-    name: params.get("name") || "",
+    name: cleanPlaceName(params.get("name"), MAX_SHARED_NAME_LENGTH),
   });
 }
 export function locationHash(location) {
