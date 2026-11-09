@@ -6,21 +6,21 @@
 const MAJOR_ROADS = ["motorway", "trunk", "primary", "secondary", "tertiary"],
   MINOR_ROADS = ["minor", "service"],
   MINOR_RANGE = 15000;
-function tileDistance(canonical, origin) {
+export function tileDistance(canonical, origin) {
   const n = 2 ** canonical.z,
-    lon = (x) => (x / n) * 360 - 180,
     lat = (y) => (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n))) * 180) / Math.PI,
-    west = lon(canonical.x),
-    east = lon(canonical.x + 1),
+    width = 360 / n,
+    west = (canonical.x / n) * 360 - 180,
     north = lat(canonical.y),
     south = lat(canonical.y + 1),
-    cx = Math.max(west, Math.min(east, origin[0])),
+    // Degrees east of the tile's west edge, so the nearest world copy counts
+    // when the tile and the aircraft are on opposite sides of the date line.
+    offset = (((origin[0] - west) % 360) + 360) % 360,
+    dx = offset <= width ? 0 : Math.min(offset - width, 360 - offset),
     cy = Math.max(south, Math.min(north, origin[1]));
   return (
-    Math.hypot(
-      (cx - origin[0]) * Math.cos((origin[1] * Math.PI) / 180),
-      cy - origin[1],
-    ) * 111195
+    Math.hypot(dx * Math.cos((origin[1] * Math.PI) / 180), cy - origin[1]) *
+    111195
   );
 }
 export async function collectLightingGeometry(

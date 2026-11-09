@@ -1,11 +1,11 @@
-import { createPlaceLights, densityAt } from "./place-lights.mjs?v=1.1.3-e4223098";
+import { createPlaceLights, densityAt } from "./place-lights.mjs?v=1.1.3-7dab4e25";
 import {
   roadLights,
   lampPriority,
   visibilityFor,
   expandFeature,
   lightHash as hash,
-} from "./light-geometry.mjs?v=1.1.3-e4223098";
+} from "./light-geometry.mjs?v=1.1.3-7dab4e25";
 const rad = Math.PI / 180;
 
 // Lights are generated for everything the loaded tiles cover, not only for the

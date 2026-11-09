@@ -1,5 +1,5 @@
-import { clamp } from "./flight-math.mjs?v=1.1.3-e4223098";
-import { VIEW_LIMITS, wrapAngle } from "./view-math.mjs?v=1.1.3-e4223098";
+import { clamp } from "./flight-math.mjs?v=1.1.3-7dab4e25";
+import { VIEW_LIMITS, wrapAngle } from "./view-math.mjs?v=1.1.3-7dab4e25";
 
 export class ViewControls {
   constructor(canvas, { reducedMotion = false, onChange = () => {} } = {}) {

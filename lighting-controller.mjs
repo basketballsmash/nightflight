@@ -1,4 +1,4 @@
-import { collectLightingGeometry } from "./map-lighting-source.mjs?v=1.1.3-e4223098";
+import { collectLightingGeometry } from "./map-lighting-source.mjs?v=1.1.3-7dab4e25";
 
 export class LightingController {
   constructor({ getMap, getFrame, isDragging, lights = null }) {
@@ -18,7 +18,7 @@ export class LightingController {
     this.worker = null;
     try {
       this.worker = new Worker(
-        new URL("./lights-worker.mjs?v=1.1.3-e4223098", import.meta.url),
+        new URL("./lights-worker.mjs?v=1.1.3-7dab4e25", import.meta.url),
         { type: "module" },
       );
       this.worker.onmessage = (event) => this.receive(event.data);

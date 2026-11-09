@@ -113,6 +113,22 @@ function compile(gl, type, source) {
   return shader;
 }
 
+// MapLibre rebuilds the style from a snapshot after a WebGL context loss (and
+// after its workers restart). Custom layers are not part of that snapshot and
+// `load` does not fire again, so add the layer whenever a style finishes
+// loading. The layer keeps its lights, so they return without new tile data.
+export function keepLightsLayerAttached(
+  map,
+  layer,
+  { beforeId, hidden = () => false } = {},
+) {
+  map.on("style.load", () => {
+    if (map.getLayer(layer.id)) return;
+    map.addLayer(layer, beforeId);
+    if (hidden()) map.setLayoutProperty(layer.id, "visibility", "none");
+  });
+}
+
 export function createLightsLayer({
   id = "night-lights",
   now = () => performance.now(),
@@ -164,10 +180,18 @@ export function createLightsLayer({
     },
     onAdd(m, gl) {
       map = m;
+      // A re-add may follow a teardown that never called onRemove. isProgram
+      // and isBuffer are false for objects that died with a lost context.
+      if (program && gl.isProgram(program)) gl.deleteProgram(program);
+      if (buffer && gl.isBuffer(buffer)) gl.deleteBuffer(buffer);
+      const vertex = compile(gl, gl.VERTEX_SHADER, VERTEX),
+        fragment = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT);
       program = gl.createProgram();
-      gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERTEX));
-      gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAGMENT));
+      gl.attachShader(program, vertex);
+      gl.attachShader(program, fragment);
       gl.linkProgram(program);
+      gl.deleteShader(vertex);
+      gl.deleteShader(fragment);
       if (!gl.getProgramParameter(program, gl.LINK_STATUS))
         throw new Error(gl.getProgramInfoLog(program));
       locations = Object.fromEntries(
